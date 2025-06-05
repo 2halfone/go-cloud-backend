@@ -17,3 +17,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+
+# ---- Security & Testing ----
+pentest-suite/
+authservice

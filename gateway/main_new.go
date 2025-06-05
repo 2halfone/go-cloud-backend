@@ -208,9 +208,10 @@ func main() {
         AllowCredentials: true,
         MaxAge:           86400, // 24 ore
     }))
-      // Rate limiting globale con diversi limiti per endpoint
+    
+    // Rate limiting globale con diversi limiti per endpoint
     app.Use(limiter.New(limiter.Config{
-        Max:        10, // 10 richieste per minuto per endpoint generale
+        Max:        100, // 100 richieste per minuto
         Expiration: 1 * time.Minute,
         KeyGenerator: func(c *fiber.Ctx) string {
             return c.Get("X-Forwarded-For", c.IP())
@@ -252,19 +253,17 @@ func main() {
     // -------------------------------------------------------
     // 2) Rotte pubbliche (senza JWT)
     // -------------------------------------------------------
-      // Rotte di autenticazione - non richiedono JWT
+    
+    // Rotte di autenticazione - non richiedono JWT
     app.All("/auth/*", func(c *fiber.Ctx) error {
-        // Strip /auth prefix and forward to auth-service
-        newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
-        if newPath == "" {
-            newPath = "/"
-        }
-        target := "http://localhost:3001" + newPath
+        target := "http://localhost:3001" + c.OriginalURL()
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
-    })      // QR code scanning - pubblico
+    })
+    
+    // QR code scanning - pubblico (ma potrebbe essere limitato in futuro)
     app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
-        target := "http://localhost:3002/qr/scan"
+        target := "http://localhost:3002" + c.OriginalURL()
         log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
     })
@@ -308,9 +307,10 @@ func main() {
 
     // -------------------------------------------------------
     // 4) Rotte protette con JWT obbligatorio
-    // -------------------------------------------------------      // User service protetto - forward complete path
+    // -------------------------------------------------------
+    
+    // User service protetto
     app.All("/user/*", func(c *fiber.Ctx) error {
-        // Forward complete path to user-service (user service expects /user/profile)
         target := "http://localhost:3002" + c.OriginalURL()
         log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
