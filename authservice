@@ -1,0 +1,41 @@
+⚠️ Vulnerabilità da Migliorare
+Problema	Rischio	Soluzione Consigliata
+JWT Secret hardcoded	Alto	Usare variabili d'ambiente
+Nessuna validazione email	Medio	Regex validation
+Nessun rate limiting	Medio	Implementare throttling
+Storage in memoria	Alto	Database persistente
+Nessun HTTPS	Alto	TLS/SSL certificates
+Password policy assente	Medio	Requisiti complessità
+
+
+
+Consigli extra (facoltativi)
+In produzione, sostituisci l’in-memory map con un vero database (es. PostgreSQL, MongoDB, ecc.) e memorizza gli utenti in una tabella/collection.
+
+Estrai la chiave segreta in variabile d’ambiente (ad es. JWT_SECRET).
+
+Aggiungi un meccanismo per disabilitare account o cambiare password.
+
+Configura Fiber in modalità “Prod” (abilitando gzip, logger, ecc.).
+
+Prossimo Passo: Gateway
+Vedo che hai già preparato il modulo gateway! Questo sarà il punto di ingresso unico per tutti i microservizi. Vuoi che creiamo il gateway che:
+
+Gira sulla porta 3000 (come nel tuo esempio curl)
+Proxy delle richieste ai microservizi
+Validazione JWT centralizzata
+Load balancing tra istanze
+
+
+Client registra/login su auth-service
+Riceve JWT token
+Invia richieste al gateway con header Authorization: Bearer <token>
+Gateway valida JWT e proxy verso microservizio
+⚠️ Vulnerabilità Critiche Identificate
+Problema	Rischio	Impatto
+JWT Secret hardcoded	🔴 Alto	Compromissione totale sistema
+Storage in memoria	🔴 Alto	Perdita dati al riavvio
+Nessun HTTPS	🔴 Alto	Intercettazione credenziali
+Nessuna validazione email	🟡 Medio	Dati inconsistenti
+Nessun rate limiting	🟡 Medio	Attacchi brute force
+Password policy assente	🟡 Medio	Password deboli
