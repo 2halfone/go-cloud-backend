@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "log"
+    "os"
     "strings"
     "time"
 
@@ -17,8 +18,8 @@ import (
     "github.com/golang-jwt/jwt/v4"
 )
 
-// JWT secret - deve corrispondere esattamente alla chiave segreta di auth-service
-var jwtSecret = []byte("la-tua-chiave-segreta-qui")
+// JWT secret - loaded from environment variable JWT_SECRET
+var jwtSecret []byte
 
 // LogEntry rappresenta una voce di log strutturata
 type LogEntry struct {
@@ -151,6 +152,13 @@ func SecurityHeaders() fiber.Handler {
 }
 
 func main() {
+    // Load JWT secret from environment variable
+    jwtSecretEnv := os.Getenv("JWT_SECRET")
+    if jwtSecretEnv == "" {
+        log.Fatal("JWT_SECRET environment variable not set")
+    }
+    jwtSecret = []byte(jwtSecretEnv)
+
     app := fiber.New(fiber.Config{
         ErrorHandler: func(c *fiber.Ctx, err error) error {
             code := fiber.StatusInternalServerError
@@ -199,13 +207,12 @@ func main() {
         XDownloadOptions:          "noopen",
         XPermittedCrossDomain:     "none",
     }))
-    
-    // CORS configuration sicura
+      // CORS configuration sicura
     app.Use(cors.New(cors.Config{
-        AllowOrigins:     "http://localhost:3000,http://localhost:8080,https://localhost:3000,https://localhost:8080",
+        AllowOrigins:     "*", // Per sviluppo - in produzione specificare domini esatti
         AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For",
-        AllowCredentials: true,
+        AllowCredentials: false, // Disabilitato quando AllowOrigins è "*"
         MaxAge:           86400, // 24 ore
     }))
       // Rate limiting globale con diversi limiti per endpoint
@@ -247,9 +254,7 @@ func main() {
     }))
     
     // Logger completo per richieste/risposte
-    app.Use(RequestResponseLogger())
-
-    // -------------------------------------------------------
+    app.Use(RequestResponseLogger())    // -------------------------------------------------------
     // 2) Rotte pubbliche (senza JWT)
     // -------------------------------------------------------
       // Rotte di autenticazione - non richiedono JWT
@@ -260,11 +265,20 @@ func main() {
             newPath = "/"
         }
         target := "http://localhost:3001" + newPath
+        
+        // Aggiungi header personalizzato per identificare richieste dal Gateway
+        c.Set("X-Gateway-Request", "gateway-v1.0")
+        
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
-    })      // QR code scanning - pubblico
+    })
+      // QR code scanning - pubblico
     app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
         target := "http://localhost:3002/qr/scan"
+        
+        // Aggiungi header personalizzato per identificare richieste dal Gateway
+        c.Set("X-Gateway-Request", "gateway-v1.0")
+        
         log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
     })
@@ -296,22 +310,18 @@ func main() {
     app.Use(jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
-        Filter: func(c *fiber.Ctx) bool {
-            // Salta la validazione JWT per rotte pubbliche
-            path := c.Path()
-            return strings.HasPrefix(path, "/auth/") || 
-                   path == "/user/scan-qr" ||
-                   path == "/health" ||
-                   path == "/"
-        },
     }))
 
     // -------------------------------------------------------
     // 4) Rotte protette con JWT obbligatorio
-    // -------------------------------------------------------      // User service protetto - forward complete path
+    // -------------------------------------------------------    // User service protetto - forward complete path
     app.All("/user/*", func(c *fiber.Ctx) error {
         // Forward complete path to user-service (user service expects /user/profile)
         target := "http://localhost:3002" + c.OriginalURL()
+        
+        // Aggiungi header personalizzato per identificare richieste dal Gateway
+        c.Set("X-Gateway-Request", "gateway-v1.0")
+        
         log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
         return proxy.Do(c, target)
@@ -320,6 +330,10 @@ func main() {
     // Shop service protetto
     app.All("/shop/*", func(c *fiber.Ctx) error {
         target := "http://localhost:3003" + c.OriginalURL()
+        
+        // Aggiungi header personalizzato per identificare richieste dal Gateway
+        c.Set("X-Gateway-Request", "gateway-v1.0")
+        
         log.Printf("SHOP_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
         return proxy.Do(c, target)
@@ -328,6 +342,10 @@ func main() {
     // Chat service protetto
     app.All("/chat/*", func(c *fiber.Ctx) error {
         target := "http://localhost:3004" + c.OriginalURL()
+        
+        // Aggiungi header personalizzato per identificare richieste dal Gateway
+        c.Set("X-Gateway-Request", "gateway-v1.0")
+        
         log.Printf("CHAT_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
         return proxy.Do(c, target)

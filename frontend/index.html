@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>Interfaccia di Test Auth/Gateway</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 0 10px;
+    }
+    h2 { margin-top: 40px; }
+    label { display: block; margin: 8px 0 4px; }
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 6px;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 12px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      border: 1px solid #ddd;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Test Auth-Service / Gateway</h1>
+
+  <!-- SEZIONE REGISTRAZIONE -->
+  <h2>1. Registrazione</h2>
+  <form id="register-form">
+    <label for="reg-email">Email:</label>
+    <input type="text" id="reg-email" required />
+
+    <label for="reg-password">Password:</label>
+    <input type="password" id="reg-password" required />
+
+    <button type="submit">Registra</button>
+  </form>
+  <pre id="register-result"></pre>
+
+  <!-- SEZIONE LOGIN -->
+  <h2>2. Login</h2>
+  <form id="login-form">
+    <label for="login-email">Email:</label>
+    <input type="text" id="login-email" required />
+
+    <label for="login-password">Password:</label>
+    <input type="password" id="login-password" required />
+
+    <button type="submit">Accedi</button>
+  </form>
+  <pre id="login-result"></pre>
+
+  <!-- SEZIONE GET PROFILE -->
+  <h2>3. Ottieni Profile</h2>
+  <button id="get-profile">Mostra Profilo</button>
+  <pre id="profile-result"></pre>
+
+  <script>
+    // Memorizziamo il JWT in una variabile
+    let jwtToken = "";
+
+    // 1. Registrazione
+    document.getElementById("register-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("reg-email").value.trim();
+      const password = document.getElementById("reg-password").value.trim();
+      const resultEl = document.getElementById("register-result");
+
+      if (!email || !password) {
+        resultEl.textContent = "Email e password sono obbligatori.";
+        return;
+      }      try {
+        const res = await fetch("http://localhost:3000/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw data;
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultEl.textContent = JSON.stringify(err, null, 2);
+      }
+    });
+
+    // 2. Login
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("login-email").value.trim();
+      const password = document.getElementById("login-password").value.trim();
+      const resultEl = document.getElementById("login-result");      try {
+        const res = await fetch("http://localhost:3000/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw data;
+        jwtToken = data.token; // salvo il token per le chiamate successive
+        resultEl.textContent = "Login riuscito. Token:\n" + jwtToken;
+      } catch (err) {
+        resultEl.textContent = JSON.stringify(err, null, 2);
+      }
+    });
+
+    // 3. Ottieni Profile via gateway
+    document.getElementById("get-profile").addEventListener("click", async () => {
+      const resultEl = document.getElementById("profile-result");
+      if (!jwtToken) {
+        resultEl.textContent = "Devi prima effettuare il login.";
+        return;
+      }
+      try {
+        const res = await fetch("http://localhost:3000/user/profile", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + jwtToken
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) throw data;
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultEl.textContent = JSON.stringify(err, null, 2);
+      }
+    });
+  </script>
+</body>
+</html>
