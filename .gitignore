@@ -1,0 +1,19 @@
+# ---- Go ----
+/bin/
+/obj/
+/vendor/
+/*.exe
+/*.exe~
+/*.dll
+/*.so
+/*.dylib
+
+# Mac, Windows, Linux temp files
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Editor
+.vscode/
+.idea/
+*.swp
