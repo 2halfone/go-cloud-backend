@@ -93,23 +93,22 @@ func getUsersHandler(c *fiber.Ctx) error {
     
     offset := (page - 1) * limit
     
-    // Query base
-    query := `SELECT id, name, last_name, status, timestamp FROM users`
-    countQuery := `SELECT COUNT(*) FROM users`
-    args := []interface{}{
-        limit,
-        offset,
-    }
+    // Query base e conteggio
+    var query, countQuery string
+    var args, countArgs []interface{}
     
-    // Aggiungi filtro status se fornito
+    // Costruisci query in base ai filtri
     if status != "" {
-        query += ` WHERE status = $1`
-        countQuery += ` WHERE status = $1`
-        args = append(args, status)
+        query = `SELECT id, name, last_name, status, timestamp FROM users WHERE status = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`
+        countQuery = `SELECT COUNT(*) FROM users WHERE status = $1`
+        args = []interface{}{status, limit, offset}
+        countArgs = []interface{}{status}
+    } else {
+        query = `SELECT id, name, last_name, status, timestamp FROM users ORDER BY timestamp DESC LIMIT $1 OFFSET $2`
+        countQuery = `SELECT COUNT(*) FROM users`
+        args = []interface{}{limit, offset}
+        countArgs = []interface{}{}
     }
-    
-    // Aggiungi ordinamento e paginazione
-    query += ` ORDER BY timestamp DESC LIMIT $` + strconv.Itoa(len(args)) + ` OFFSET $` + strconv.Itoa(len(args)+1)
     
     // Esegui query per gli utenti
     rows, err := database.DB.Query(query, args...)
@@ -134,8 +133,11 @@ func getUsersHandler(c *fiber.Ctx) error {
     
     // Conta totale utenti
     var total int
-    countArgs := args[:len(args)-2] // Rimuovi limit e offset per il count
-    err = database.DB.QueryRow(countQuery, countArgs...).Scan(&total)
+    if len(countArgs) > 0 {
+        err = database.DB.QueryRow(countQuery, countArgs...).Scan(&total)
+    } else {
+        err = database.DB.QueryRow(countQuery).Scan(&total)
+    }
     if err != nil {
         log.Printf("Error counting users: %v", err)
         total = len(users)

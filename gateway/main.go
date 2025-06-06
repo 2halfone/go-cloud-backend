@@ -320,10 +320,20 @@ func main() {
     // 4) Rotte protette con JWT obbligatorio
     // -------------------------------------------------------
 
-// User service protetto - forward complete path
+// User service protetto - forward con path stripping
 app.All("/user/*", func(c *fiber.Ctx) error {
-    // Forward complete path to user-service (user service expects /user/profile)
-    target := "http://user-service:3002" + c.OriginalURL()
+    // Rimuovi /user dal path e forward al user-service
+    path := strings.TrimPrefix(c.Path(), "/user")
+    if path == "" {
+        path = "/"
+    }
+    target := "http://user-service:3002" + path
+    if c.OriginalURL() != c.Path() {
+        // Mantieni query parameters
+        if strings.Contains(c.OriginalURL(), "?") {
+            target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+        }
+    }
     
     // Aggiungi header personalizzato per identificare richieste dal Gateway
     c.Set("X-Gateway-Request", "gateway-v1.0")
