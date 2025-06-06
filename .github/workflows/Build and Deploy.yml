@@ -2,7 +2,7 @@ name: Deploy to VM
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]  # Cambia da main a master
 
 jobs:
   deploy:
