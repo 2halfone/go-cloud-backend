@@ -81,15 +81,10 @@ func RequestResponseLogger() fiber.Handler {
         // Determina il servizio di destinazione
         var service string
         path := c.Path()
-        switch {
-        case strings.HasPrefix(path, "/auth/"):
+        switch {        case strings.HasPrefix(path, "/auth/"):
             service = "auth-service"
         case strings.HasPrefix(path, "/user/"):
             service = "user-service"
-        case strings.HasPrefix(path, "/shop/"):
-            service = "shop-service"
-        case strings.HasPrefix(path, "/chat/"):
-            service = "chat-service"
         default:
             service = "gateway"
         }
@@ -255,25 +250,23 @@ func main() {
     // Logger completo per richieste/risposte
     app.Use(RequestResponseLogger())    // -------------------------------------------------------
     // 2) Rotte pubbliche (senza JWT)
-    // -------------------------------------------------------
-      // Rotte di autenticazione - non richiedono JWT
+    // -------------------------------------------------------    // Rotte di autenticazione - non richiedono JWT
     app.All("/auth/*", func(c *fiber.Ctx) error {
         // Strip /auth prefix and forward to auth-service
         newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
         if newPath == "" {
             newPath = "/"
         }
-        target := "http://localhost:3001" + newPath
+        target := "http://auth-service:3001" + newPath
         
         // Aggiungi header personalizzato per identificare richieste dal Gateway
         c.Set("X-Gateway-Request", "gateway-v1.0")
         
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
-    })
-      // QR code scanning - pubblico
+    })      // QR code scanning - pubblico
     app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
-        target := "http://localhost:3002/qr/scan"
+        target := "http://user-service:3002/qr/scan"
         
         // Aggiungi header personalizzato per identificare richieste dal Gateway
         c.Set("X-Gateway-Request", "gateway-v1.0")
@@ -304,10 +297,9 @@ func main() {
         return c.JSON(fiber.Map{
             "message": "Go Cloud Backend Gateway API",
             "version": "1.0.0",
-            "status":  "running",
-            "endpoints": fiber.Map{
+            "status":  "running",            "endpoints": fiber.Map{
                 "auth":   "/auth/register, /auth/login",
-                "user":   "/user/profile (protected)",
+                "user":   "/user/profile (protected), /user/scan-qr (public)",
                 "health": "/health",
             },
             "timestamp": time.Now().Format(time.RFC3339),
@@ -331,36 +323,12 @@ func main() {
 // User service protetto - forward complete path
 app.All("/user/*", func(c *fiber.Ctx) error {
     // Forward complete path to user-service (user service expects /user/profile)
-    target := "http://localhost:3002" + c.OriginalURL()
+    target := "http://user-service:3002" + c.OriginalURL()
     
     // Aggiungi header personalizzato per identificare richieste dal Gateway
     c.Set("X-Gateway-Request", "gateway-v1.0")
     
     log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-    return proxy.Do(c, target)
-})
-
-// Shop service protetto
-app.All("/shop/*", func(c *fiber.Ctx) error {
-    target := "http://localhost:3003" + c.OriginalURL()
-    
-    // Aggiungi header personalizzato per identificare richieste dal Gateway
-    c.Set("X-Gateway-Request", "gateway-v1.0")
-    
-    log.Printf("SHOP_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-    return proxy.Do(c, target)
-})
-
-// Chat service protetto
-app.All("/chat/*", func(c *fiber.Ctx) error {
-    target := "http://localhost:3004" + c.OriginalURL()
-    
-    // Aggiungi header personalizzato per identificare richieste dal Gateway
-    c.Set("X-Gateway-Request", "gateway-v1.0")
-    
-    log.Printf("CHAT_PROXY: %s %s -> %s [IP: %s, User: %s]", 
         c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
     return proxy.Do(c, target)
 })
@@ -377,7 +345,7 @@ app.All("/chat/*", func(c *fiber.Ctx) error {
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
     log.Println("   ✅ Error Handling & Recovery")
-    log.Println("🔒 Protected routes: /user/*, /shop/*, /chat/*")
+    log.Println("🔒 Protected routes: /user/*")
     log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
     log.Println("🎯 Gateway listening on port 3000")
     
