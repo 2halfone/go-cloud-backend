@@ -1,6 +1,7 @@
 package main
 
 import (
+    "auth-service/database"
     "log"
     "net/mail"
     "os"
@@ -200,6 +201,9 @@ func main() {
         log.Fatal("JWT_SECRET environment variable not set")    }
     jwtSecret = []byte(jwtSecretEnv)
 
+    // Connetti al database
+    database.Connect()
+    
     app := fiber.New()
 
     // CORS restrittivo - accetta solo richieste dal Gateway

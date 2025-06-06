@@ -33,6 +33,42 @@ type UserRequest struct {
     Status   string `json:"status"`
 }
 
+// QR scan request structure
+type QRScanRequest struct {
+    QRCode   string `json:"qr_code"`
+    Location string `json:"location"`
+}
+
+// QR scan data structure
+type QRScan struct {
+    QRCode    string    `json:"qr_code"`
+    Location  string    `json:"location"`
+    Timestamp time.Time `json:"timestamp"`
+}
+
+// User choice request structure
+type UserChoiceRequest struct {
+    Choice   string                 `json:"choice"`
+    QRCode   string                 `json:"qr_code"`
+    Location string                 `json:"location"`
+    Metadata map[string]interface{} `json:"metadata"`
+}
+
+// User choice data structure
+type UserChoice struct {
+    ID        string                 `json:"id"`
+    UserEmail string                 `json:"user_email"`
+    QRCode    string                 `json:"qr_code"`
+    Choice    string                 `json:"choice"`
+    Location  string                 `json:"location"`
+    Metadata  map[string]interface{} `json:"metadata"`
+    Timestamp time.Time              `json:"timestamp"`
+}
+
+// In-memory storage for QR scans and user choices (for demo purposes)
+var qrScans []QRScan
+var userChoices []UserChoice
+
 // Response per lista utenti con paginazione
 type UsersResponse struct {
     Users []User `json:"users"`
@@ -365,6 +401,9 @@ func jwtError(c *fiber.Ctx, err error) error {
 }
 
 func main() {
+    // Initialize database connection
+    database.Connect()
+    
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
     if jwtSecretEnv == "" {
