@@ -26,9 +26,19 @@ type User struct {
 // In-memory store molto semplice (map da email → User)
 var users = map[string]User{}
 
+// Helper function per debug logging
+func getMapKeys(m map[string]User) []string {
+    keys := make([]string, 0, len(m))
+    for k := range m {
+        keys = append(keys, k)
+    }
+    return keys
+}
+
 // request payload per /register
 type registerRequest struct {
     Email    string `json:"email"`
+    Username string `json:"username"` // supporta anche username
     Password string `json:"password"`
 }
 
@@ -37,25 +47,31 @@ func registerHandler(c *fiber.Ctx) error {
     if err := c.BodyParser(&req); err != nil {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
-        })
-    }
-
-    // TrimSpace su email e password
+        })    }    // TrimSpace su email, username e password
     req.Email = strings.TrimSpace(req.Email)
+    req.Username = strings.TrimSpace(req.Username)
     req.Password = strings.TrimSpace(req.Password)
 
-    // Validazione email vuota
-    if req.Email == "" {
+    // Supporta sia email che username come identificatore
+    // Priorità: username se fornito, altrimenti email
+    var identifier string
+    if req.Username != "" {
+        identifier = req.Username
+    } else if req.Email != "" {
+        identifier = req.Email
+    } else {
         return c.Status(400).JSON(fiber.Map{
-            "error": "Email non può essere vuota",
+            "error": "Email o username richiesti",
         })
     }
 
-    // Validazione formato email
-    if _, err := mail.ParseAddress(req.Email); err != nil {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "Formato email non valido",
-        })
+    // Validazione formato email se email è fornita
+    if req.Email != "" {
+        if _, err := mail.ParseAddress(req.Email); err != nil {
+            return c.Status(400).JSON(fiber.Map{
+                "error": "Formato email non valido",
+            })
+        }
     }
 
     // Validazione password vuota
@@ -63,10 +79,8 @@ func registerHandler(c *fiber.Ctx) error {
         return c.Status(400).JSON(fiber.Map{
             "error": "Password non può essere vuota",
         })
-    }
-
-    // Controlla se l'utente esiste già
-    if _, exists := users[req.Email]; exists {
+    }    // Controlla se l'utente esiste già (usa identifier che può essere email o username)
+    if _, exists := users[identifier]; exists {
         return c.Status(fiber.StatusConflict).JSON(fiber.Map{
             "error": "Utente già registrato",
         })
@@ -77,14 +91,15 @@ func registerHandler(c *fiber.Ctx) error {
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore server nel processare la password",
-        })
-    }
+        })    }
 
-    // Salva l'utente in memoria
-    users[req.Email] = User{
-        Email:    req.Email,
+    // Salva l'utente in memoria (usa identifier come chiave)
+    users[identifier] = User{
+        Email:    identifier, // identifier può essere email o username
         Password: string(hashedPassword),
     }
+
+    log.Printf("REGISTER_SUCCESS: identifier='%s', users_count=%d", identifier, len(users))
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message": "Registrazione avvenuta con successo",
@@ -94,6 +109,7 @@ func registerHandler(c *fiber.Ctx) error {
 // request payload per /login
 type loginRequest struct {
     Email    string `json:"email"`
+    Username string `json:"username"` // supporta anche username
     Password string `json:"password"`
 }
 
@@ -103,11 +119,25 @@ func loginHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
         })
+    }    // Supporta sia email che username come identificatore per login
+    // Priorità: username se fornito, altrimenti email
+    var identifier string
+    if req.Username != "" {
+        identifier = req.Username
+    } else if req.Email != "" {
+        identifier = req.Email
+    } else {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "Email o username richiesti",
+        })
     }
 
+    log.Printf("LOGIN_DEBUG: identifier='%s', users_keys=%v", identifier, getMapKeys(users))
+
     // Controlla se l'utente esiste
-    user, exists := users[req.Email]
+    user, exists := users[identifier]
     if !exists {
+        log.Printf("LOGIN_FAILED: identifier '%s' not found in users map", identifier)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
         })
@@ -118,12 +148,12 @@ func loginHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
         })
-    }
-
-    // Genera JWT
+    }    // Genera JWT
     token := jwt.New(jwt.SigningMethodHS256)
     claims := token.Claims.(jwt.MapClaims)
-    claims["email"] = user.Email
+    claims["email"] = user.Email // mantiene email per compatibilità
+    claims["user_id"] = identifier // aggiunge user_id che può essere email o username
+    claims["identifier"] = identifier // campo esplicito per l'identificatore usato
     claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // scade dopo 24h
 
     tokenString, err := token.SignedString(jwtSecret)

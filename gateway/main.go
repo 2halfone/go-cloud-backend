@@ -175,9 +175,8 @@ func main() {
                 "code":      code,
                 "timestamp": time.Now().Format(time.RFC3339),
             })
-        },
-        ReadTimeout:  10 * time.Second,
-        WriteTimeout: 10 * time.Second,
+        },        ReadTimeout:  30 * time.Second,
+        WriteTimeout: 30 * time.Second,
         BodyLimit:    2 * 1024 * 1024, // 2MB limit
     })
 
@@ -209,15 +208,15 @@ func main() {
     }))
       // CORS configuration sicura
     app.Use(cors.New(cors.Config{
-        AllowOrigins:     "*", // Per sviluppo - in produzione specificare domini esatti
+        AllowOrigins:     "http://localhost:5500,http://localhost:8080,http://127.0.0.1:5500,http://127.0.0.1:8080,http://localhost:3000,https://localhost:3000,https://localhost:8080",
         AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For",
-        AllowCredentials: false, // Disabilitato quando AllowOrigins è "*"
+        AllowCredentials: true,
         MaxAge:           86400, // 24 ore
     }))
       // Rate limiting globale con diversi limiti per endpoint
     app.Use(limiter.New(limiter.Config{
-        Max:        10, // 10 richieste per minuto per endpoint generale
+        Max:        100, // 100 richieste per minuto per endpoint generale
         Expiration: 1 * time.Minute,
         KeyGenerator: func(c *fiber.Ctx) string {
             return c.Get("X-Forwarded-For", c.IP())
@@ -286,19 +285,32 @@ func main() {
     // Health checks pubblici
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
-            "status":      "healthy",
-            "timestamp":   time.Now().Format(time.RFC3339),
-            "gateway":     "v1.0.0",
-            "uptime":      time.Since(time.Now()).String(),
-            "environment": "development",
-            "features": []string{
-                "JWT Authentication",
-                "Rate Limiting", 
-                "Security Headers",
-                "Request/Response Logging",
-                "CORS Protection",
-                "Error Handling",
+            "status":    "healthy",
+            "service":   "gateway",
+            "timestamp": time.Now().Format(time.RFC3339),
+            "version":   "1.0.0",
+        })
+    })    // Aggiungiamo una route per la root path con debug logging
+    app.Get("/", func(c *fiber.Ctx) error {
+        log.Printf("ROOT_PATH_REQUEST: Method=%s Path=%s IP=%s UserAgent='%s' Headers=%v", 
+            c.Method(), c.Path(), c.IP(), c.Get("User-Agent"), 
+            map[string]string{
+                "Accept": c.Get("Accept"),
+                "Content-Type": c.Get("Content-Type"),
+                "Origin": c.Get("Origin"),
+                "Referer": c.Get("Referer"),
+            })
+        
+        return c.JSON(fiber.Map{
+            "message": "Go Cloud Backend Gateway API",
+            "version": "1.0.0",
+            "status":  "running",
+            "endpoints": fiber.Map{
+                "auth":   "/auth/register, /auth/login",
+                "user":   "/user/profile (protected)",
+                "health": "/health",
             },
+            "timestamp": time.Now().Format(time.RFC3339),
         })
     })
 
@@ -314,75 +326,48 @@ func main() {
 
     // -------------------------------------------------------
     // 4) Rotte protette con JWT obbligatorio
-    // -------------------------------------------------------    // User service protetto - forward complete path
-    app.All("/user/*", func(c *fiber.Ctx) error {
-        // Forward complete path to user-service (user service expects /user/profile)
-        target := "http://localhost:3002" + c.OriginalURL()
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-        return proxy.Do(c, target)
-    })
-
-    // Shop service protetto
-    app.All("/shop/*", func(c *fiber.Ctx) error {
-        target := "http://localhost:3003" + c.OriginalURL()
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("SHOP_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-        return proxy.Do(c, target)
-    })
-
-    // Chat service protetto
-    app.All("/chat/*", func(c *fiber.Ctx) error {
-        target := "http://localhost:3004" + c.OriginalURL()
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("CHAT_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-        return proxy.Do(c, target)
-    })
-
-    // Rotta di default informativa
-    app.Get("/", func(c *fiber.Ctx) error {
-        return c.JSON(fiber.Map{
-            "message": "🚀 Secure API Gateway v1.0.0",
-            "description": "Centralized security and request routing for microservices",
-            "routes": map[string]interface{}{
-                "public": map[string]string{
-                    "/auth/*":        "Authentication service (registration, login)",
-                    "/user/scan-qr":  "QR code scanning endpoint",
-                    "/health":        "Gateway health check",
-                },
-                "protected": map[string]string{
-                    "/user/*":  "User service (requires JWT)",
-                    "/shop/*":  "Shop service (requires JWT)",
-                    "/chat/*":  "Chat service (requires JWT)",
-                },
-            },
-            "security_features": []string{
-                "JWT Authentication",
-                "Rate Limiting (100/min global, 20/min auth)",
-                "Security Headers (HSTS, CSP, XSS Protection)",
-                "CORS Protection",
-                "Request/Response Logging",
-                "Error Handling & Recovery",
-            },
-            "timestamp": time.Now().Format(time.RFC3339),
-        })
-    })
-
     // -------------------------------------------------------
-    // 5) Avvio del server
-    // -------------------------------------------------------
+
+// User service protetto - forward complete path
+app.All("/user/*", func(c *fiber.Ctx) error {
+    // Forward complete path to user-service (user service expects /user/profile)
+    target := "http://localhost:3002" + c.OriginalURL()
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// Shop service protetto
+app.All("/shop/*", func(c *fiber.Ctx) error {
+    target := "http://localhost:3003" + c.OriginalURL()
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("SHOP_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// Chat service protetto
+app.All("/chat/*", func(c *fiber.Ctx) error {
+    target := "http://localhost:3004" + c.OriginalURL()
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("CHAT_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// -------------------------------------------------------
+// 5) Avvio del server
+// -------------------------------------------------------
     
     log.Println("🚀 Secure API Gateway v1.0.0 starting...")
     log.Println("📊 Security features enabled:")
