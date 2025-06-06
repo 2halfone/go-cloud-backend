@@ -1,0 +1,46 @@
+[Unit]
+Description=Go Microservices - Gateway Service
+After=network.target
+Wants=network-online.target
+Requires=go-microservices-auth.service go-microservices-user.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/go-microservices/gateway
+ExecStart=/opt/go-microservices/gateway/gateway
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gateway
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/go-microservices/gateway
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Environment variables
+Environment=PORT=3000
+Environment=AUTH_SERVICE_URL=http://localhost:3001
+Environment=USER_SERVICE_URL=http://localhost:3002
+EnvironmentFile=-/opt/go-microservices/.env
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Health check
+ExecStartPost=/bin/sleep 5
+ExecStartPost=/bin/bash -c 'curl -f http://localhost:3000/health || exit 1'
+
+[Install]
+WantedBy=multi-user.target
