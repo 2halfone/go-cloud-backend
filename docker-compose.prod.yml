@@ -21,6 +21,20 @@ services:
       timeout: 10s
       retries: 3
 
+  # --- Database per i log di autenticazione ---
+  auth-db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: auth_admin
+      POSTGRES_PASSWORD: auth_password
+      POSTGRES_DB: auth_logs_db
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+
+  # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
       context: ./auth-service
@@ -28,7 +42,11 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - JWT_SECRET=${JWT_SECRET}
+      # stringa di connessione al nuovo PostgreSQL
+      AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - auth-db
     networks:
       - microservices-net
     restart: unless-stopped
@@ -88,4 +106,6 @@ networks:
 
 volumes:
   portainer_data:
+    driver: local
+  auth_db_data:
     driver: local
