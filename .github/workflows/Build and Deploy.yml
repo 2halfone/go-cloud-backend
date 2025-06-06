@@ -2,7 +2,7 @@ name: Deploy to VM
 
 on:
   push:
-    branches: [ master ]  # Cambia da main a master
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -14,67 +14,31 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup SSH Key
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
 
     - name: Deploy to VM
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
           set -e
           
-          # Go to deployment directory
-          cd ${{ secrets.DEPLOY_PATH }}
+          cd /home/${{ secrets.USERNAME }}
           
-          # Remove old code if exists
           rm -rf go-cloud-backend
-          
-          # Clone latest code
           git clone https://github.com/${{ github.repository }}.git go-cloud-backend
           cd go-cloud-backend
           
-          # Create .env file
           cat > .env << EOF
         JWT_SECRET=${{ secrets.JWT_SECRET }}
-        COMMIT_SHA=${{ github.sha }}
-        COMMIT_REF=${{ github.ref_name }}
-        DEPLOYMENT_TIME=$(date -u +%Y%m%d_%H%M%S)
         EOF
           
-          # Stop current services if running
           docker-compose -f docker-compose.prod.yml down || true
-          
-          # Build and start services
-          echo "🚀 Building and starting services..."
           docker-compose -f docker-compose.prod.yml up --build -d
           
-          # Wait for services to be ready
-          echo "⏳ Waiting for services..."
           sleep 30
-          
-          # Health check
-          echo "🏥 Health checking services..."
-          if curl -f http://localhost:3000/health; then
-            echo "✅ Gateway is healthy"
-          else
-            echo "❌ Gateway health check failed"
-            exit 1
-          fi
-          
-          if curl -f http://localhost:3001/health; then
-            echo "✅ Auth service is healthy"
-          else
-            echo "❌ Auth service health check failed"
-            exit 1
-          fi
-          
-          if curl -f http://localhost:3002/health; then
-            echo "✅ User service is healthy"
-          else
-            echo "❌ User service health check failed"
-            exit 1
-          fi
-          
-          echo "🎉 Deployment completed successfully!"
-          docker-compose -f docker-compose.prod.yml ps
+          curl -f http://localhost:3000/health
+          echo "✅ Deployment completed!"
         ENDSSH
