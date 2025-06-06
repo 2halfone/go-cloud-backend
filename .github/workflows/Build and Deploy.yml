@@ -29,14 +29,16 @@ jobs:
           
           rm -rf go-cloud-backend
           git clone https://github.com/${{ github.repository }}.git go-cloud-backend
-          cd go-cloud-backend
-            cat > .env << EOF
+          cd go-cloud-backend          cat > .env << EOF
         JWT_SECRET=${{ secrets.JWT_SECRET }}
         EOF
           
           docker-compose -f docker-compose.prod.yml down || true
+          docker rmi golang:1.21-alpine || true
+          docker rmi $(docker images 'go-cloud-backend*' -q) || true
           docker system prune -f
-          docker-compose -f docker-compose.prod.yml build --no-cache
+          docker pull golang:1.23-alpine
+          docker-compose -f docker-compose.prod.yml build --no-cache --pull
           docker-compose -f docker-compose.prod.yml up -d
           
           sleep 30
