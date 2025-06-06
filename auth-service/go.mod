@@ -2,8 +2,6 @@ module auth-service
 
 go 1.24.3
 
-toolchain go1.24.3
-
 require (
 	github.com/gofiber/fiber/v2 v2.52.8
 	github.com/gofiber/jwt/v3 v3.3.10
