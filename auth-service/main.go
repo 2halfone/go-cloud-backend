@@ -108,7 +108,33 @@ func registerHandler(c *fiber.Ctx) error {
 
     var userID int
     var createdAt time.Time
-    err = database.DB.QueryRow(insertQuery, req.Email, req.Username, string(hashedPassword), "user", time.Now()).
+    
+    // Se username è vuoto, genera automaticamente dalla email
+    var finalUsername string
+    if req.Username == "" {
+        // Estrae la parte prima di @ dall'email
+        emailParts := strings.Split(req.Email, "@")
+        baseUsername := emailParts[0]
+        
+        // Verifica se username esiste già e genera versione unica
+        finalUsername = baseUsername
+        counter := 1
+        for {
+            var existingUsernameID int
+            err := database.DB.QueryRow("SELECT id FROM users WHERE username = $1", finalUsername).Scan(&existingUsernameID)
+            if err == sql.ErrNoRows {
+                // Username disponibile
+                break
+            }
+            // Username occupato, prova con numero
+            finalUsername = fmt.Sprintf("%s%d", baseUsername, counter)
+            counter++
+        }
+    } else {
+        finalUsername = req.Username
+    }
+    
+    err = database.DB.QueryRow(insertQuery, req.Email, finalUsername, string(hashedPassword), "user", time.Now()).
         Scan(&userID, &createdAt)
 
     if err != nil {
@@ -119,14 +145,14 @@ func registerHandler(c *fiber.Ctx) error {
         })
     }
 
-    log.Printf("REGISTER_SUCCESS: user_id=%d, email=%s, username=%s", userID, req.Email, req.Username)
+    log.Printf("REGISTER_SUCCESS: user_id=%d, email=%s, username=%s", userID, req.Email, finalUsername)
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message": "Registrazione avvenuta con successo",
         "user": fiber.Map{
             "id":         userID,
             "email":      req.Email,
-            "username":   req.Username,
+            "username":   finalUsername,  // Restituisce l'username generato
             "created_at": createdAt,
         },
         "code": "REGISTER_SUCCESS",
