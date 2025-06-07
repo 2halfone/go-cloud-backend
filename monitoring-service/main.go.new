@@ -1,0 +1,143 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type Claims struct {
+	UserID int    `json:"user_id"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+// JWT Middleware per verificare token e ruolo admin
+func adminJWTMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		tokenString := strings.Replace(authHeader, "Bearer ", "", 1)
+		
+		// Parse token con la secret key
+		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+			jwtSecret := os.Getenv("JWT_SECRET")
+			if jwtSecret == "" {
+				jwtSecret = "your-secret-key"
+			}
+			return []byte(jwtSecret), nil
+		})
+
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := token.Claims.(*Claims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
+			c.Abort()
+			return
+		}
+
+		// Verifica che l'utente sia admin
+		if claims.Role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", claims.UserID)
+		c.Set("role", claims.Role)
+		c.Next()
+	}
+}
+
+// Proxy per Grafana
+func grafanaProxy(c *gin.Context) {
+	grafanaURL := os.Getenv("GRAFANA_URL")
+	if grafanaURL == "" {
+		grafanaURL = "http://grafana:3000"
+	}
+
+	target, err := url.Parse(grafanaURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid Grafana URL"})
+		return
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	
+	// Modifica la request per rimuovere il prefisso /monitoring
+	originalPath := c.Request.URL.Path
+	c.Request.URL.Path = strings.TrimPrefix(originalPath, "/monitoring")
+	if c.Request.URL.Path == "" {
+		c.Request.URL.Path = "/"
+	}
+
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func main() {
+	r := gin.Default()
+
+	// CORS middleware
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		
+		c.Next()
+	})
+
+	// Health check endpoint (no auth required)
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy", "service": "monitoring"})
+	})
+
+	// Protected monitoring routes (admin only)
+	protected := r.Group("/")
+	protected.Use(adminJWTMiddleware())
+	{
+		// Info endpoint
+		protected.GET("/info", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Monitoring Service - Admin Dashboard",
+				"user_id": c.GetInt("user_id"),
+				"role":    c.GetString("role"),
+				"grafana": "Available at /monitoring/*",
+			})
+		})
+
+		// Proxy to Grafana
+		protected.Any("/monitoring/*path", grafanaProxy)
+		protected.Any("/monitoring", grafanaProxy)
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8085"
+	}
+
+	fmt.Printf("🔍 Monitoring Service starting on port %s\n", port)
+	fmt.Println("📊 Admin-only Grafana access available at /monitoring")
+	
+	r.Run(":" + port)
+}

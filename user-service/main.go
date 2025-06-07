@@ -12,10 +12,46 @@ import (
     "github.com/gofiber/fiber/v2/middleware/cors"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/gofiber/adaptor/v2"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
+
+// Prometheus metrics
+var (
+    requestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "user_service_requests_total",
+            Help: "Total number of requests to user service",
+        },
+        []string{"method", "endpoint", "status"},
+    )
+    
+    requestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name: "user_service_request_duration_seconds",
+            Help: "Request duration in seconds",
+        },
+        []string{"method", "endpoint"},
+    )
+    
+    qrScansTotal = prometheus.NewCounter(
+        prometheus.CounterOpts{
+            Name: "user_service_qr_scans_total",
+            Help: "Total number of QR code scans",
+        },
+    )
+)
+
+func init() {
+    // Register metrics with Prometheus
+    prometheus.MustRegister(requestsTotal)
+    prometheus.MustRegister(requestDuration)
+    prometheus.MustRegister(qrScansTotal)
+}
 
 // User rappresenta un utente nella tabella users
 type User struct {
@@ -442,12 +478,17 @@ func main() {
     app.Post("/user/choice", saveChoiceHandler)
     app.Get("/user/choices", getUserChoicesHandler)
 
-    // Endpoint per gestione utenti
-    app.Get("/users", getUsersHandler)
+    // Endpoint per gestione utenti    app.Get("/users", getUsersHandler)
     app.Get("/users/:id", getUserByIDHandler)
     app.Post("/users", createUserHandler)
     app.Put("/users/:id", updateUserHandler)
     app.Delete("/users/:id", deleteUserHandler)
+
+    // Metrics endpoint for Prometheus
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := adaptor.HTTPHandler(promhttp.Handler())
+        return handler(c)
+    })
 
     log.Println("🚀 User Service completo avviato sulla porta 3002")
     log.Fatal(app.Listen(":3002"))

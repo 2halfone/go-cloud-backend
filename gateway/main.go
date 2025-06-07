@@ -16,10 +16,47 @@ import (
     "github.com/gofiber/fiber/v2/middleware/recover"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/gofiber/adaptor/v2"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
+
+// Prometheus metrics
+var (
+    gatewayRequestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_requests_total",
+            Help: "Total number of requests through gateway",
+        },
+        []string{"method", "path", "service", "status"},
+    )
+    
+    gatewayRequestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name: "gateway_request_duration_seconds",
+            Help: "Request duration in seconds",
+        },
+        []string{"method", "service"},
+    )
+    
+    gatewayRateLimitHits = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_rate_limit_hits_total",
+            Help: "Total number of rate limit hits",
+        },
+        []string{"path"},
+    )
+)
+
+func init() {
+    // Register metrics with Prometheus
+    prometheus.MustRegister(gatewayRequestsTotal)
+    prometheus.MustRegister(gatewayRequestDuration)
+    prometheus.MustRegister(gatewayRateLimitHits)
+}
 
 // LogEntry rappresenta una voce di log strutturata
 type LogEntry struct {
@@ -77,14 +114,18 @@ func RequestResponseLogger() fiber.Handler {
                 }
             }
         }
-        
-        // Determina il servizio di destinazione
+          // Determina il servizio di destinazione
         var service string
         path := c.Path()
-        switch {        case strings.HasPrefix(path, "/auth/"):
+        switch {
+        case strings.HasPrefix(path, "/auth/"):
             service = "auth-service"
         case strings.HasPrefix(path, "/user/"):
             service = "user-service"
+        case strings.HasPrefix(path, "/admin/monitoring/"):
+            service = "monitoring-service"
+        case strings.HasPrefix(path, "/admin/"):
+            service = "auth-service"
         default:
             service = "gateway"
         }
@@ -274,8 +315,7 @@ func main() {
         log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
     })
-    
-    // Health checks pubblici
+      // Health checks pubblici
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
             "status":    "healthy",
@@ -283,7 +323,13 @@ func main() {
             "timestamp": time.Now().Format(time.RFC3339),
             "version":   "1.0.0",
         })
-    })    // Aggiungiamo una route per la root path con debug logging
+    })
+
+    // Metrics endpoint for Prometheus (public)
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := adaptor.HTTPHandler(promhttp.Handler())
+        return handler(c)
+    })// Aggiungiamo una route per la root path con debug logging
     app.Get("/", func(c *fiber.Ctx) error {
         log.Printf("ROOT_PATH_REQUEST: Method=%s Path=%s IP=%s UserAgent='%s' Headers=%v", 
             c.Method(), c.Path(), c.IP(), c.Get("User-Agent"), 
@@ -298,10 +344,11 @@ func main() {
             "message": "Go Cloud Backend Gateway API",
             "version": "1.0.0",
             "status":  "running",            "endpoints": fiber.Map{
-                "auth":   "/auth/register, /auth/login",
-                "user":   "/user/profile (protected), /user/scan-qr (public)",
-                "admin":  "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
-                "health": "/health",
+                "auth":       "/auth/register, /auth/login",
+                "user":       "/user/profile (protected), /user/scan-qr (public)",
+                "admin":      "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
+                "monitoring": "/admin/monitoring/* (admin only - Grafana dashboard)",
+                "health":     "/health",
             },
             "timestamp": time.Now().Format(time.RFC3339),
         })
@@ -347,6 +394,23 @@ app.All("/user/*", func(c *fiber.Ctx) error {
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------
 
+// Monitoring routes - solo per admin, forward al monitoring-service
+app.All("/admin/monitoring/*", adminOnly, func(c *fiber.Ctx) error {
+    // Strip /admin/monitoring prefix and forward to monitoring-service
+    newPath := strings.TrimPrefix(c.OriginalURL(), "/admin/monitoring")
+    if newPath == "" {
+        newPath = "/"
+    }
+    target := "http://monitoring-service:3004" + newPath
+    
+    // Forward JWT token to monitoring service for Grafana access
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("MONITORING_PROXY: %s %s -> %s [IP: %s, User: %s, Role: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c), getUserRole(c))
+    return proxy.Do(c, target)
+})
+
 // Admin routes - richiedono ruolo admin
 app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
     // Strip /admin prefix and forward to auth-service
@@ -376,10 +440,10 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
     log.Println("   ✅ Error Handling & Recovery")
-    
-    log.Println("🔒 Protected routes: /user/*, /admin/*")
+      log.Println("🔒 Protected routes: /user/*, /admin/*")
     log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
     log.Println("👑 Admin routes: /admin/* (admin role required)")
+    log.Println("📊 Monitoring routes: /admin/monitoring/* (admin only - Grafana dashboard)")
     log.Println("🎯 Gateway listening on port 3000")
     
     if err := app.Listen(":3000"); err != nil {

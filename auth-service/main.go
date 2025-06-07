@@ -15,10 +15,54 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "golang.org/x/crypto/bcrypt"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/gofiber/adaptor/v2"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
+
+// Prometheus metrics
+var (
+    requestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "auth_service_requests_total",
+            Help: "Total number of requests to auth service",
+        },
+        []string{"method", "endpoint", "status"},
+    )
+    
+    requestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name: "auth_service_request_duration_seconds",
+            Help: "Request duration in seconds",
+        },
+        []string{"method", "endpoint"},
+    )
+    
+    registrationsTotal = prometheus.NewCounter(
+        prometheus.CounterOpts{
+            Name: "auth_service_registrations_total",
+            Help: "Total number of user registrations",
+        },
+    )
+    
+    loginsTotal = prometheus.NewCounter(
+        prometheus.CounterOpts{
+            Name: "auth_service_logins_total",
+            Help: "Total number of successful logins",
+        },
+    )
+)
+
+func init() {
+    // Register metrics with Prometheus
+    prometheus.MustRegister(requestsTotal)
+    prometheus.MustRegister(requestDuration)
+    prometheus.MustRegister(registrationsTotal)
+    prometheus.MustRegister(loginsTotal)
+}
 
 // User rappresenta un utente registrato nel database PostgreSQL
 type User struct {
@@ -431,15 +475,19 @@ func main() {
     }))
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
-    // app.Use(gatewayOnly)
-
-    // Health endpoint (pubblico)
+    // app.Use(gatewayOnly)    // Health endpoint (pubblico)
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
             "status":    "healthy",
             "service":   "auth-service",
             "timestamp": time.Now(),
         })
+    })
+
+    // Metrics endpoint for Prometheus
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := adaptor.HTTPHandler(promhttp.Handler())
+        return handler(c)
     })
 
     // Endpoint per registrare un nuovo utente
@@ -474,10 +522,14 @@ func main() {
     admin.Get("/users", getAllUsersHandler)
 
     // Endpoint per aggiornare il ruolo di un utente (admin)
-    admin.Put("/users/:id/role", updateUserRoleHandler)
-
-    // Endpoint per eliminare un utente (admin)
+    admin.Put("/users/:id/role", updateUserRoleHandler)    // Endpoint per eliminare un utente (admin)
     admin.Delete("/users/:id", deleteUserHandler)
+
+    // Metrics endpoint for Prometheus
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := adaptor.HTTPHandler(promhttp.Handler())
+        return handler(c)
+    })
 
     log.Println("Auth-service in ascolto sulla porta 3001")
     if err := app.Listen(":3001"); err != nil {
