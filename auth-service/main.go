@@ -2,6 +2,7 @@ package main
 
 import (
     "auth-service/database"
+    "database/sql"
     "log"
     "net/mail"
     "os"
@@ -18,22 +19,13 @@ import (
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// User rappresenta un utente registrato (per semplicità, memorizzato in memoria)
+// User rappresenta un utente registrato nel database PostgreSQL
 type User struct {
-    Email    string
-    Password string // hashed
-}
-
-// In-memory store molto semplice (map da email → User)
-var users = map[string]User{}
-
-// Helper function per debug logging
-func getMapKeys(m map[string]User) []string {
-    keys := make([]string, 0, len(m))
-    for k := range m {
-        keys = append(keys, k)
-    }
-    return keys
+    ID        int       `json:"id"`
+    Email     string    `json:"email"`
+    Username  string    `json:"username,omitempty"`
+    Password  string    `json:"-"` // hashed, non esposto nel JSON
+    CreatedAt time.Time `json:"created_at"`
 }
 
 // request payload per /register
@@ -53,19 +45,6 @@ func registerHandler(c *fiber.Ctx) error {
     req.Username = strings.TrimSpace(req.Username)
     req.Password = strings.TrimSpace(req.Password)
 
-    // Supporta sia email che username come identificatore
-    // Priorità: username se fornito, altrimenti email
-    var identifier string
-    if req.Username != "" {
-        identifier = req.Username
-    } else if req.Email != "" {
-        identifier = req.Email
-    } else {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "Email o username richiesti",
-        })
-    }
-
     // Validazione formato email se email è fornita
     if req.Email != "" {
         if _, err := mail.ParseAddress(req.Email); err != nil {
@@ -73,37 +52,66 @@ func registerHandler(c *fiber.Ctx) error {
                 "error": "Formato email non valido",
             })
         }
+    }    // Validazione password (minimo 6 caratteri per Flutter)
+    if len(req.Password) < 6 {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "Password deve essere di almeno 6 caratteri",
+            "code":  "PASSWORD_TOO_SHORT",
+        })
     }
 
-    // Validazione password vuota
-    if req.Password == "" {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "Password non può essere vuota",
-        })
-    }    // Controlla se l'utente esiste già (usa identifier che può essere email o username)
-    if _, exists := users[identifier]; exists {
+    // Controlla se l'utente esiste già nel database PostgreSQL
+    var existingID int
+    checkQuery := "SELECT id FROM users WHERE email = $1 OR username = $2"
+    err := database.DB.QueryRow(checkQuery, req.Email, req.Username).Scan(&existingID)
+    if err != sql.ErrNoRows {
+        log.Printf("REGISTER_ERROR: User already exists - email=%s, username=%s", req.Email, req.Username)
         return c.Status(fiber.StatusConflict).JSON(fiber.Map{
             "error": "Utente già registrato",
+            "code":  "USER_EXISTS",
         })
     }
 
     // Hash della password
     hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
     if err != nil {
+        log.Printf("REGISTER_ERROR: Password hashing failed - %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore server nel processare la password",
-        })    }
-
-    // Salva l'utente in memoria (usa identifier come chiave)
-    users[identifier] = User{
-        Email:    identifier, // identifier può essere email o username
-        Password: string(hashedPassword),
+            "code":  "HASH_ERROR",
+        })
     }
 
-    log.Printf("REGISTER_SUCCESS: identifier='%s', users_count=%d", identifier, len(users))
+    // Salva l'utente nel database PostgreSQL
+    insertQuery := `
+        INSERT INTO users (email, username, password, created_at) 
+        VALUES ($1, $2, $3, $4) 
+        RETURNING id, created_at`
+
+    var userID int
+    var createdAt time.Time
+    err = database.DB.QueryRow(insertQuery, req.Email, req.Username, string(hashedPassword), time.Now()).
+        Scan(&userID, &createdAt)
+
+    if err != nil {
+        log.Printf("REGISTER_ERROR: Database insert failed - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nel salvare l'utente",
+            "code":  "DATABASE_ERROR",
+        })
+    }
+
+    log.Printf("REGISTER_SUCCESS: user_id=%d, email=%s, username=%s", userID, req.Email, req.Username)
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message": "Registrazione avvenuta con successo",
+        "user": fiber.Map{
+            "id":         userID,
+            "email":      req.Email,
+            "username":   req.Username,
+            "created_at": createdAt,
+        },
+        "code": "REGISTER_SUCCESS",
     })
 }
 
@@ -114,13 +122,16 @@ type loginRequest struct {
     Password string `json:"password"`
 }
 
-func loginHandler(c *fiber.Ctx) error {
-    var req loginRequest
+func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     if err := c.BodyParser(&req); err != nil {
+        log.Printf("LOGIN_ERROR: Invalid payload - %v", err)
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
+            "code":  "INVALID_PAYLOAD",
         })
-    }    // Supporta sia email che username come identificatore per login
+    }
+
+    // Supporta sia email che username come identificatore per login
     // Priorità: username se fornito, altrimenti email
     var identifier string
     if req.Username != "" {
@@ -130,42 +141,69 @@ func loginHandler(c *fiber.Ctx) error {
     } else {
         return c.Status(400).JSON(fiber.Map{
             "error": "Email o username richiesti",
+            "code":  "MISSING_IDENTIFIER",
         })
     }
 
-    log.Printf("LOGIN_DEBUG: identifier='%s', users_keys=%v", identifier, getMapKeys(users))
+    log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
 
-    // Controlla se l'utente esiste
-    user, exists := users[identifier]
-    if !exists {
-        log.Printf("LOGIN_FAILED: identifier '%s' not found in users map", identifier)
+    // Cerca l'utente nel database PostgreSQL
+    var user User
+    selectQuery := `SELECT id, email, username, password, created_at FROM users WHERE email = $1 OR username = $1`
+    err := database.DB.QueryRow(selectQuery, identifier).Scan(
+        &user.ID, &user.Email, &user.Username, &user.Password, &user.CreatedAt)
+
+    if err == sql.ErrNoRows {
+        log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
+            "code":  "INVALID_CREDENTIALS",
+        })
+    } else if err != nil {
+        log.Printf("LOGIN_ERROR: Database query failed - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore interno del server",
+            "code":  "DATABASE_ERROR",
         })
     }
 
     // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+        log.Printf("LOGIN_FAILED: Invalid password for identifier '%s'", identifier)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
+            "code":  "INVALID_CREDENTIALS",
         })
-    }    // Genera JWT
+    }
+
+    // Genera JWT
     token := jwt.New(jwt.SigningMethodHS256)
     claims := token.Claims.(jwt.MapClaims)
-    claims["email"] = user.Email // mantiene email per compatibilità
-    claims["user_id"] = identifier // aggiunge user_id che può essere email o username
+    claims["email"] = user.Email     // mantiene email per compatibilità
+    claims["user_id"] = user.ID      // ID numerico dal database
     claims["identifier"] = identifier // campo esplicito per l'identificatore usato
     claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // scade dopo 24h
 
     tokenString, err := token.SignedString(jwtSecret)
     if err != nil {
+        log.Printf("LOGIN_ERROR: JWT signing failed - %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Impossibile generare il token",
+            "code":  "JWT_ERROR",
         })
     }
 
+    log.Printf("LOGIN_SUCCESS: user_id=%d, email=%s", user.ID, user.Email)
+
     return c.JSON(fiber.Map{
-        "token": tokenString,
+        "token":        tokenString,
+        "access_token": tokenString, // Per compatibilità Flutter
+        "expires_in":   86400,       // 24 ore in secondi
+        "user": fiber.Map{
+            "id":       user.ID,
+            "email":    user.Email,
+            "username": user.Username,
+        },
     })
 }
 
@@ -204,11 +242,9 @@ func main() {
     // Connetti al database
     database.Connect()
     
-    app := fiber.New()
-
-    // CORS restrittivo - accetta solo richieste dal Gateway
+    app := fiber.New()    // CORS per Flutter - permette origini multiple in sviluppo
     app.Use(cors.New(cors.Config{
-        AllowOrigins:     "http://localhost:3000", // Solo dal Gateway
+        AllowOrigins:     "*", // Per Flutter permettiamo tutti gli origins in sviluppo
         AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For,X-Gateway-Request",
         AllowCredentials: true,
