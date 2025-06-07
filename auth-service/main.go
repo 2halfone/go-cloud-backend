@@ -196,7 +196,8 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     return c.JSON(fiber.Map{
         "token":        tokenString,
         "access_token": tokenString, // Per compatibilità Flutter
-        "expires_in":   86400,       // 24 ore in secondi        "user": fiber.Map{
+        "expires_in":   86400,       // 24 ore in secondi
+        "user": fiber.Map{
             "id":       user.ID,
             "email":    user.Email,
             "username": user.Username,
