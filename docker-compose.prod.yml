@@ -101,8 +101,7 @@ services:
     restart: unless-stopped
 
   # --- MONITORING SERVICES ---
-  
-  # Monitoring Service (Admin JWT-protected Grafana access)
+    # Monitoring Service (Admin JWT-protected Grafana access)
   monitoring-service:
     build:
       context: ./monitoring-service
@@ -114,7 +113,7 @@ services:
       - GIN_MODE=release
       - GRAFANA_URL=http://grafana:3000
     networks:
-      - app-network
+      - microservices-net
     depends_on:
       - grafana
       - prometheus
