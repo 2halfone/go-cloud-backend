@@ -3,6 +3,7 @@ package main
 import (
     "auth-service/database"
     "database/sql"
+    "fmt"
     "log"
     "net/mail"
     "os"
@@ -25,6 +26,7 @@ type User struct {
     Email     string    `json:"email"`
     Username  string    `json:"username,omitempty"`
     Password  string    `json:"-"` // hashed, non esposto nel JSON
+    Role      string    `json:"role"`
     CreatedAt time.Time `json:"created_at"`
 }
 
@@ -40,7 +42,8 @@ func registerHandler(c *fiber.Ctx) error {
     if err := c.BodyParser(&req); err != nil {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
-        })    }    // TrimSpace su email, username e password
+        })
+    }    // TrimSpace su email, username e password
     req.Email = strings.TrimSpace(req.Email)
     req.Username = strings.TrimSpace(req.Username)
     req.Password = strings.TrimSpace(req.Password)
@@ -80,17 +83,15 @@ func registerHandler(c *fiber.Ctx) error {
             "error": "Errore server nel processare la password",
             "code":  "HASH_ERROR",
         })
-    }
-
-    // Salva l'utente nel database PostgreSQL
+    }    // Salva l'utente nel database PostgreSQL
     insertQuery := `
-        INSERT INTO users (email, username, password, created_at) 
-        VALUES ($1, $2, $3, $4) 
+        INSERT INTO users (email, username, password, role, created_at) 
+        VALUES ($1, $2, $3, $4, $5) 
         RETURNING id, created_at`
 
     var userID int
     var createdAt time.Time
-    err = database.DB.QueryRow(insertQuery, req.Email, req.Username, string(hashedPassword), time.Now()).
+    err = database.DB.QueryRow(insertQuery, req.Email, req.Username, string(hashedPassword), "user", time.Now()).
         Scan(&userID, &createdAt)
 
     if err != nil {
@@ -145,13 +146,11 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
         })
     }
 
-    log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
-
-    // Cerca l'utente nel database PostgreSQL
+    log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)    // Cerca l'utente nel database PostgreSQL
     var user User
-    selectQuery := `SELECT id, email, username, password, created_at FROM users WHERE email = $1 OR username = $1`
+    selectQuery := `SELECT id, email, username, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
-        &user.ID, &user.Email, &user.Username, &user.Password, &user.CreatedAt)
+        &user.ID, &user.Email, &user.Username, &user.Password, &user.Role, &user.CreatedAt)
 
     if err == sql.ErrNoRows {
         log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
@@ -174,13 +173,12 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
-    }
-
-    // Genera JWT
+    }    // Genera JWT
     token := jwt.New(jwt.SigningMethodHS256)
     claims := token.Claims.(jwt.MapClaims)
     claims["email"] = user.Email     // mantiene email per compatibilità
     claims["user_id"] = user.ID      // ID numerico dal database
+    claims["role"] = user.Role       // ruolo utente per autorizzazione
     claims["identifier"] = identifier // campo esplicito per l'identificatore usato
     claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // scade dopo 24h
 
@@ -198,12 +196,149 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     return c.JSON(fiber.Map{
         "token":        tokenString,
         "access_token": tokenString, // Per compatibilità Flutter
-        "expires_in":   86400,       // 24 ore in secondi
-        "user": fiber.Map{
+        "expires_in":   86400,       // 24 ore in secondi        "user": fiber.Map{
             "id":       user.ID,
             "email":    user.Email,
             "username": user.Username,
+            "role":     user.Role,
         },
+    })
+}
+
+// adminOnly middleware per verificare che l'utente sia admin
+func adminOnly(c *fiber.Ctx) error {
+    user := c.Locals("user").(*jwt.Token)
+    claims := user.Claims.(jwt.MapClaims)
+    role, ok := claims["role"].(string)
+    
+    if !ok || role != "admin" {
+        log.Printf("ADMIN_ACCESS_DENIED: user_id=%v role=%v", claims["user_id"], role)
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Accesso negato. Privilegi amministratore richiesti.",
+            "code":  "ADMIN_REQUIRED",
+        })
+    }
+    return c.Next()
+}
+
+// getAllUsersHandler restituisce tutti gli utenti (solo admin)
+func getAllUsersHandler(c *fiber.Ctx) error {
+    query := `SELECT id, email, username, role, created_at FROM users ORDER BY created_at DESC`
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        log.Printf("ADMIN_ERROR: Failed to query users - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nel recuperare gli utenti",
+            "code":  "DATABASE_ERROR",
+        })
+    }
+    defer rows.Close()
+    
+    var users []User
+    for rows.Next() {
+        var user User
+        err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.Role, &user.CreatedAt)
+        if err != nil {
+            log.Printf("ADMIN_ERROR: Failed to scan user - %v", err)
+            continue
+        }
+        users = append(users, user)
+    }
+    
+    return c.JSON(fiber.Map{
+        "users": users,
+        "total": len(users),
+    })
+}
+
+// updateUserRoleHandler aggiorna il ruolo di un utente (solo admin)
+func updateUserRoleHandler(c *fiber.Ctx) error {
+    userID := c.Params("id")
+    
+    var req struct {
+        Role string `json:"role"`
+    }
+    if err := c.BodyParser(&req); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Payload non valido",
+            "code":  "INVALID_PAYLOAD",
+        })
+    }
+    
+    // Valida il ruolo
+    if req.Role != "user" && req.Role != "admin" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Ruolo non valido. Deve essere 'user' o 'admin'",
+            "code":  "INVALID_ROLE",
+        })
+    }
+    
+    query := `UPDATE users SET role = $1 WHERE id = $2`
+    result, err := database.DB.Exec(query, req.Role, userID)
+    if err != nil {
+        log.Printf("ADMIN_ERROR: Failed to update user role - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nell'aggiornamento del ruolo",
+            "code":  "DATABASE_ERROR",
+        })
+    }
+    
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Utente non trovato",
+            "code":  "USER_NOT_FOUND",
+        })
+    }
+    
+    log.Printf("ADMIN_ACTION: User %s role updated to %s", userID, req.Role)
+    
+    return c.JSON(fiber.Map{
+        "message": "Ruolo aggiornato con successo",
+        "user_id": userID,
+        "new_role": req.Role,
+    })
+}
+
+// deleteUserHandler elimina un utente (solo admin)
+func deleteUserHandler(c *fiber.Ctx) error {
+    userID := c.Params("id")
+    
+    // Verifica che l'admin non stia eliminando se stesso
+    user := c.Locals("user").(*jwt.Token)
+    claims := user.Claims.(jwt.MapClaims)
+    currentUserID := claims["user_id"]
+    
+    if fmt.Sprintf("%v", currentUserID) == userID {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Non puoi eliminare il tuo stesso account",
+            "code":  "SELF_DELETE_FORBIDDEN",
+        })
+    }
+    
+    query := `DELETE FROM users WHERE id = $1`
+    result, err := database.DB.Exec(query, userID)
+    if err != nil {
+        log.Printf("ADMIN_ERROR: Failed to delete user - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nell'eliminazione dell'utente",
+            "code":  "DATABASE_ERROR",
+        })
+    }
+    
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Utente non trovato",
+            "code":  "USER_NOT_FOUND",
+        })
+    }
+    
+    log.Printf("ADMIN_ACTION: User %s deleted", userID)
+    
+    return c.JSON(fiber.Map{
+        "message": "Utente eliminato con successo",
+        "user_id": userID,
     })
 }
 
@@ -285,6 +420,20 @@ func main() {
             "email":   email,
         })
     })
+
+    // Rotte amministrative - richiedono autenticazione admin
+    admin := app.Group("/admin", jwtware.New(jwtware.Config{
+        SigningKey: jwtSecret,
+    }), adminOnly)
+
+    // Endpoint per ottenere tutti gli utenti (admin)
+    admin.Get("/users", getAllUsersHandler)
+
+    // Endpoint per aggiornare il ruolo di un utente (admin)
+    admin.Put("/users/:id/role", updateUserRoleHandler)
+
+    // Endpoint per eliminare un utente (admin)
+    admin.Delete("/users/:id", deleteUserHandler)
 
     log.Println("Auth-service in ascolto sulla porta 3001")
     if err := app.Listen(":3001"); err != nil {

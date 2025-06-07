@@ -300,6 +300,7 @@ func main() {
             "status":  "running",            "endpoints": fiber.Map{
                 "auth":   "/auth/register, /auth/login",
                 "user":   "/user/profile (protected), /user/scan-qr (public)",
+                "admin":  "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
                 "health": "/health",
             },
             "timestamp": time.Now().Format(time.RFC3339),
@@ -337,14 +338,34 @@ app.All("/user/*", func(c *fiber.Ctx) error {
     
     // Aggiungi header personalizzato per identificare richieste dal Gateway
     c.Set("X-Gateway-Request", "gateway-v1.0")
-    
-    log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+      log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
         c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
     return proxy.Do(c, target)
 })
 
 // -------------------------------------------------------
-// 5) Avvio del server
+// 5) Rotte amministrative (solo admin)
+// -------------------------------------------------------
+
+// Admin routes - richiedono ruolo admin
+app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
+    // Strip /admin prefix and forward to auth-service
+    newPath := strings.TrimPrefix(c.OriginalURL(), "/admin")
+    if newPath == "" {
+        newPath = "/"
+    }
+    target := "http://auth-service:3001/admin" + newPath
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("ADMIN_PROXY: %s %s -> %s [IP: %s, User: %s, Role: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c), getUserRole(c))
+    return proxy.Do(c, target)
+})
+
+// -------------------------------------------------------
+// 6) Avvio del server
 // -------------------------------------------------------
     
     log.Println("🚀 Secure API Gateway v1.0.0 starting...")
@@ -354,9 +375,9 @@ app.All("/user/*", func(c *fiber.Ctx) error {
     log.Println("   ✅ Security Headers (HSTS, CSP, XSS)")
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
-    log.Println("   ✅ Error Handling & Recovery")
-    log.Println("🔒 Protected routes: /user/*")
+    log.Println("   ✅ Error Handling & Recovery")    log.Println("🔒 Protected routes: /user/*, /admin/*")
     log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
+    log.Println("👑 Admin routes: /admin/* (admin role required)")
     log.Println("🎯 Gateway listening on port 3000")
     
     if err := app.Listen(":3000"); err != nil {
@@ -390,4 +411,33 @@ func getUserID(c *fiber.Ctx) string {
         }
     }
     return "anonymous"
+}
+
+// getUserRole estrae il ruolo utente dal JWT token
+func getUserRole(c *fiber.Ctx) string {
+    if user := c.Locals("user"); user != nil {
+        if token, ok := user.(*jwt.Token); ok {
+            if claims, ok := token.Claims.(jwt.MapClaims); ok {
+                if role, exists := claims["role"]; exists {
+                    return fmt.Sprintf("%v", role)
+                }
+            }
+        }
+    }
+    return "user"
+}
+
+// adminOnly middleware per verificare che l'utente sia admin
+func adminOnly(c *fiber.Ctx) error {
+    role := getUserRole(c)
+    if role != "admin" {
+        log.Printf("ADMIN_ACCESS_DENIED: user_id=%s role=%s path=%s", getUserID(c), role, c.Path())
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error":     "Access denied",
+            "message":   "Administrator privileges required to access this resource",
+            "code":      fiber.StatusForbidden,
+            "timestamp": time.Now().Format(time.RFC3339),
+        })
+    }
+    return c.Next()
 }
