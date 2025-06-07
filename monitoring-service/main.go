@@ -239,10 +239,9 @@ func main() {
 		
 		c.Next()
 	})
-
 	// Public endpoints (no auth required)
 	r.GET("/health", healthCheck)
-	r.GET("/metrics", promhttp.Handler())
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Protected monitoring routes (admin only)
 	protected := r.Group("/")
