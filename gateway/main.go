@@ -375,7 +375,9 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
     log.Println("   ✅ Security Headers (HSTS, CSP, XSS)")
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
-    log.Println("   ✅ Error Handling & Recovery")    log.Println("🔒 Protected routes: /user/*, /admin/*")
+    log.Println("   ✅ Error Handling & Recovery")
+    
+    log.Println("🔒 Protected routes: /user/*, /admin/*")
     log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
     log.Println("👑 Admin routes: /admin/* (admin role required)")
     log.Println("🎯 Gateway listening on port 3000")
