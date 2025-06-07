@@ -12,3 +12,21 @@ datasources:
       prometheusType: Prometheus
       prometheusVersion: 2.45.0
     version: 1
+    
+  # PostgreSQL datasource per vedere tabelle database
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: auth-db:5432
+    database: auth_logs_db
+    user: auth_admin
+    secureJsonData:
+      password: auth_password
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1200
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    editable: true
+    version: 1
