@@ -242,9 +242,9 @@ func main() {
     // Connetti al database
     database.Connect()
     
-    app := fiber.New()    // CORS per Flutter - permette origini multiple in sviluppo
+    app := fiber.New()    // CORS per Flutter - configurazione sicura per sviluppo
     app.Use(cors.New(cors.Config{
-        AllowOrigins:     "*", // Per Flutter permettiamo tutti gli origins in sviluppo
+        AllowOrigins:     "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://10.0.2.2:3000", // Origins specifici invece di wildcard
         AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For,X-Gateway-Request",
         AllowCredentials: true,
