@@ -1,0 +1,153 @@
+DOCUMENTAZIONE API ADMIN - AUTH LOGS
+=====================================
+
+1. ENDPOINT E ROUTING
+====================
+URL Completo: http://34.140.122.146:3000/admin/auth-logs  ← NUOVO
+Routing: Passa attraverso il GATEWAY (porta 3000) che inoltra al auth-service
+Porta Gateway: 3000 (esposta pubblicamente)
+Porta Auth-Service: 3001 (interna Docker network)
+Path Completo: Gateway:3000 → Auth-Service:3001/admin/auth-logs
+
+2. AUTENTICAZIONE
+================
+Header Richiesto: Authorization: Bearer JWT_TOKEN
+Controllo Admin: SÌ, automatico tramite middleware adminOnly
+Verifica Ruolo: Controlla automaticamente che JWT contenga "role": "admin"
+Nessun parametro aggiuntivo necessario - tutto gestito dal token
+
+Credenziali Admin Test:
+- Email: admin@example.com
+- Password: secret123
+- User ID: 4
+
+3. STRUTTURA DELLA RISPOSTA
+===========================
+Campi per ogni log:
+- id: integer (ID univoco log)
+- user_email: string (email dell'utente)
+- username: string (username risolto via JOIN)
+- action: string (tipo azione eseguita)
+- timestamp: string ISO 8601 (data/ora evento)
+- ip_address: string (IP di origine)
+- user_agent: string (browser/client usato)
+- success: boolean (true=successo, false=fallimento)
+
+Metadati paginazione:
+- total: integer (numero totale log)
+- page: integer (pagina corrente)
+- limit: integer (log per pagina)
+- stats: object con current_page, pages_total, total_logs
+
+4. PARAMETRI DI QUERY
+=====================
+IMPLEMENTATI:
+- ?page=1 (paginazione - default: 1)
+- ?limit=50 (log per pagina - default: 50)
+
+NON IMPLEMENTATI (future features):
+- Filtro per data (?from=&to=)
+- Filtro per utente (?user_id= o ?email=)
+- Filtro per azione (?action=)
+- Ordinamento personalizzato
+
+Attualmente: Sempre ordinato per timestamp DESC (più recenti primi)
+
+5. TIPI DI LOG
+==============
+Azioni loggate:
+- "login_success" (login riuscito)
+- "login_failed_wrong_password" (password sbagliata)
+- "login_failed_user_not_found" (utente inesistente)
+
+Livelli: Non implementati (tutti i log hanno stesso livello)
+Categorizzazione: Tramite campo "success" (true/false)
+
+Database: Tabella auth_logs nel database auth_logs_db
+
+6. ESEMPIO DI RISPOSTA
+======================
+HTTP 200 OK
+Content-Type: application/json
+
+{
+  "limit": 50,
+  "logs": [
+    {
+      "id": 2,
+      "user_email": "admin@example.com",
+      "username": "admin",
+      "action": "login_failed_wrong_password",
+      "timestamp": "2025-06-07T19:34:40.322174Z",
+      "ip_address": "172.18.0.6",
+      "user_agent": "curl/7.81.0",
+      "success": false
+    },
+    {
+      "id": 1,
+      "user_email": "admin@example.com",
+      "username": "admin",
+      "action": "login_success",
+      "timestamp": "2025-06-07T19:34:40.227751Z",
+      "ip_address": "172.18.0.6",
+      "user_agent": "curl/7.81.0",
+      "success": true
+    }
+  ],
+  "page": 1,
+  "stats": {
+    "current_page": 1,
+    "pages_total": 1,
+    "total_logs": 2
+  },
+  "total": 2
+}
+
+ERRORI POSSIBILI:
+=================
+HTTP 401 - Token mancante/invalido/scaduto
+{
+  "code": 401,
+  "error": "Authentication failed",
+  "message": "Invalid or missing JWT token"
+}
+
+HTTP 403 - Utente non admin
+{
+  "code": 403,
+  "error": "Access denied",
+  "message": "Admin role required"
+}
+
+HTTP 500 - Errore database
+{
+  "code": "DATABASE_ERROR",
+  "error": "Errore nel recuperare i log di autenticazione"
+}
+
+ESEMPIO CHIAMATA CURL:
+======================
+# Login per ottenere token admin
+curl -X POST http://46.4.106.127:3000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"admin@example.com","password":"secret123"}'
+
+# Chiamata API logs (sostituire TOKEN)
+curl -H "Authorization: Bearer JWT_TOKEN_HERE" \
+     http://46.4.106.127:3000/admin/auth-logs?page=1&limit=20
+
+SICUREZZA:
+==========
+- Endpoint protetto da middleware adminOnly
+- Solo utenti con role "admin" possono accedere
+- JWT token obbligatorio con scadenza 24h
+- Logs non contengono password o dati sensibili
+- IP tracking per audit trail
+
+DATABASE INFO:
+==============
+- Database: auth_logs_db
+- Tabella: auth_logs
+- Indici: Primary key su id
+- Connessione: PostgreSQL 15
+- Auto-timestamp: Campo timestamp con default NOW()
