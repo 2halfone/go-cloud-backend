@@ -19,7 +19,7 @@ Thumbs.db
 *.swp
 
 
-# ---- Security & Testing ----
+# ---- Security & Testing ---
 pentest-suite/
 authservice
 scripts/
