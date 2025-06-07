@@ -2,6 +2,7 @@ package main
 
 import (
     "auth-service/database"
+    "auth-service/models"
     "database/sql"
     "fmt"
     "log"
@@ -185,11 +186,12 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     } else {
         return c.Status(400).JSON(fiber.Map{
             "error": "Email o username richiesti",
-            "code":  "MISSING_IDENTIFIER",
-        })
+            "code":  "MISSING_IDENTIFIER",        })
     }
 
-    log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)    // Cerca l'utente nel database PostgreSQL
+    log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
+    
+    // Cerca l'utente nel database PostgreSQL
     var user User
     selectQuery := `SELECT id, email, username, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
@@ -197,6 +199,8 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
 
     if err == sql.ErrNoRows {
         log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
+        // Log failed login attempt
+        go models.LogAuthActionDetailed(identifier, "", "login_failed_user_not_found", c.IP(), c.Get("User-Agent"), false)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
@@ -212,6 +216,8 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
         log.Printf("LOGIN_FAILED: Invalid password for identifier '%s'", identifier)
+        // Log failed login attempt with wrong password
+        go models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
@@ -231,10 +237,12 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Impossibile generare il token",
             "code":  "JWT_ERROR",
-        })
-    }
+        })    }
 
     log.Printf("LOGIN_SUCCESS: user_id=%d, email=%s", user.ID, user.Email)
+    
+    // Log the successful authentication with details
+    go models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true)
 
     return c.JSON(fiber.Map{
         "token":        tokenString,
@@ -386,6 +394,57 @@ func deleteUserHandler(c *fiber.Ctx) error {
     })
 }
 
+// getAuthLogsHandler restituisce tutti i log di autenticazione (solo admin)
+func getAuthLogsHandler(c *fiber.Ctx) error {
+    // Parametri di paginazione opzionali
+    page := c.QueryInt("page", 1)
+    limit := c.QueryInt("limit", 50)
+    
+    if page < 1 {
+        page = 1
+    }
+    if limit < 1 || limit > 500 {
+        limit = 50
+    }
+    
+    logs, err := models.GetAuthLogs()
+    if err != nil {
+        log.Printf("ADMIN_ERROR: Failed to get auth logs - %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nel recuperare i log di autenticazione",
+            "code":  "DATABASE_ERROR",
+        })
+    }
+    
+    // Paginazione semplice
+    total := len(logs)
+    start := (page - 1) * limit
+    end := start + limit
+    
+    if start >= total {
+        logs = []models.AuthLog{}
+    } else {
+        if end > total {
+            end = total
+        }
+        logs = logs[start:end]
+    }
+    
+    log.Printf("ADMIN_ACTION: Auth logs requested - page=%d, limit=%d, total=%d", page, limit, total)
+    
+    return c.JSON(fiber.Map{
+        "logs":  logs,
+        "total": total,
+        "page":  page,
+        "limit": limit,
+        "stats": fiber.Map{
+            "total_logs": total,
+            "current_page": page,
+            "pages_total": (total + limit - 1) / limit,
+        },
+    })
+}
+
 // gatewayOnly middleware per accettare solo richieste dal Gateway
 func gatewayOnly(c *fiber.Ctx) error {
     // Verifica che la richiesta provenga dal Gateway
@@ -468,10 +527,11 @@ func main() {
     // Rotte amministrative - richiedono autenticazione admin
     admin := app.Group("/admin", jwtware.New(jwtware.Config{
         SigningKey: jwtSecret,
-    }), adminOnly)
-
-    // Endpoint per ottenere tutti gli utenti (admin)
+    }), adminOnly)    // Endpoint per ottenere tutti gli utenti (admin)
     admin.Get("/users", getAllUsersHandler)
+
+    // Endpoint per ottenere i log di autenticazione (admin)
+    admin.Get("/auth-logs", getAuthLogsHandler)
 
     // Endpoint per aggiornare il ruolo di un utente (admin)
     admin.Put("/users/:id/role", updateUserRoleHandler)
