@@ -61,12 +61,29 @@ func registerHandler(c *fiber.Ctx) error {
             "error": "Password deve essere di almeno 6 caratteri",
             "code":  "PASSWORD_TOO_SHORT",
         })
-    }
-
-    // Controlla se l'utente esiste già nel database PostgreSQL
+    }    // Controlla se l'utente esiste già nel database PostgreSQL
     var existingID int
-    checkQuery := "SELECT id FROM users WHERE email = $1 OR username = $2"
-    err := database.DB.QueryRow(checkQuery, req.Email, req.Username).Scan(&existingID)
+    var checkQuery string
+    var args []interface{}
+    
+    // Costruisci la query dinamicamente per evitare falsi positivi con stringhe vuote
+    if req.Username != "" && req.Email != "" {
+        checkQuery = "SELECT id FROM users WHERE email = $1 OR username = $2"
+        args = []interface{}{req.Email, req.Username}
+    } else if req.Email != "" {
+        checkQuery = "SELECT id FROM users WHERE email = $1"
+        args = []interface{}{req.Email}
+    } else if req.Username != "" {
+        checkQuery = "SELECT id FROM users WHERE username = $1"
+        args = []interface{}{req.Username}
+    } else {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "Email o username richiesti per la registrazione",
+            "code":  "MISSING_IDENTIFIER",
+        })
+    }
+    
+    err := database.DB.QueryRow(checkQuery, args...).Scan(&existingID)
     if err != sql.ErrNoRows {
         log.Printf("REGISTER_ERROR: User already exists - email=%s, username=%s", req.Email, req.Username)
         return c.Status(fiber.StatusConflict).JSON(fiber.Map{
