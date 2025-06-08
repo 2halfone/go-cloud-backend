@@ -76,8 +76,7 @@ func RequestResponseLogger() fiber.Handler {
                     }
                 }
             }
-        }
-          // Determina il servizio di destinazione
+        }          // Determina il servizio di destinazione
         var service string
         path := c.Path()
         switch {
@@ -85,8 +84,6 @@ func RequestResponseLogger() fiber.Handler {
             service = "auth-service"
         case strings.HasPrefix(path, "/user/"):
             service = "user-service"
-        case strings.HasPrefix(path, "/events"):
-            service = "events-service"
         default:
             service = "gateway"
         }
@@ -277,57 +274,6 @@ func main() {
         return proxy.Do(c, target)
     })
 
-    // -------------------------------------------------------
-    // Events endpoint - pubblico con rate limiting specifico
-    // -------------------------------------------------------
-    
-    // Events endpoint with strict rate limiting - 10 requests per minute per IP
-    app.Use("/events", limiter.New(limiter.Config{
-        Max:        10, // 10 requests per minute per IP for events endpoint
-        Expiration: 1 * time.Minute,
-        KeyGenerator: func(c *fiber.Ctx) string {
-            return "events:" + c.Get("X-Forwarded-For", c.IP())
-        },
-        LimitReached: func(c *fiber.Ctx) error {
-            log.Printf("EVENTS_RATE_LIMIT_EXCEEDED: IP=%s Path=%s Method=%s UserAgent=%s", 
-                c.IP(), c.Path(), c.Method(), c.Get("User-Agent"))
-            return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-                "error":       "Rate limit exceeded",
-                "message":     "Too many requests to events endpoint. Limit: 10 requests per minute per IP",
-                "retry_after": 60,
-                "limit":       10,
-                "window":      "1 minute",
-                "timestamp":   time.Now().Format(time.RFC3339),
-            })
-        },
-    }))
-
-    // Events endpoint - public access with rate limiting
-    app.All("/events", func(c *fiber.Ctx) error {
-        // You can forward to a specific events service or handle events directly
-        // For now, I'll assume it forwards to an events service
-        target := "http://events-service:3003" + c.OriginalURL()
-        
-        // Add custom header to identify requests from Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("EVENTS_PROXY: %s %s -> %s [IP: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
-    })
-
-    app.All("/events/*", func(c *fiber.Ctx) error {
-        // Handle sub-paths under /events
-        target := "http://events-service:3003" + c.OriginalURL()
-        
-        // Add custom header to identify requests from Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("EVENTS_PROXY: %s %s -> %s [IP: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
-    })
-    
     // Health checks pubblici
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
@@ -339,28 +285,26 @@ func main() {
     })    // Aggiungiamo una route per la root path con debug logging
     app.Get("/", func(c *fiber.Ctx) error {
         log.Printf("ROOT_PATH_REQUEST: Method=%s Path=%s IP=%s UserAgent='%s' Headers=%v", 
-            c.Method(), c.Path(), c.IP(), c.Get("User-Agent"), 
-            map[string]string{
+            c.Method(), c.Path(), c.IP(), c.Get("User-Agent"),            map[string]string{
                 "Accept": c.Get("Accept"),
                 "Content-Type": c.Get("Content-Type"),
                 "Origin": c.Get("Origin"),
                 "Referer": c.Get("Referer"),
             })
-          return c.JSON(fiber.Map{
+        
+        return c.JSON(fiber.Map{
             "message": "Go Cloud Backend Gateway API",
             "version": "1.0.0",
             "status":  "running",
             "endpoints": fiber.Map{
                 "auth":   "/auth/register, /auth/login",
                 "user":   "/user/profile (protected), /user/scan-qr (public)",
-                "events": "/events/* (public, rate limited: 10/min per IP)",
                 "admin":  "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
                 "health": "/health",
             },
             "rate_limits": fiber.Map{
                 "global": "100 requests/minute",
                 "auth":   "20 requests/minute",
-                "events": "10 requests/minute per IP",
             },
             "timestamp": time.Now().Format(time.RFC3339),
         })
@@ -425,20 +369,18 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
 
 // -------------------------------------------------------
 // 6) Avvio del server
-// -------------------------------------------------------
-      log.Println("🚀 Secure API Gateway v1.0.0 starting...")
+// -------------------------------------------------------      log.Println("🚀 Secure API Gateway v1.0.0 starting...")
     log.Println("📊 Security features enabled:")
     log.Println("   ✅ JWT Authentication")
-    log.Println("   ✅ Rate Limiting (100/min global, 20/min auth, 10/min events)")
+    log.Println("   ✅ Rate Limiting (100/min global, 20/min auth)")
     log.Println("   ✅ Security Headers (HSTS, CSP, XSS)")
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
     log.Println("   ✅ Error Handling & Recovery")
     
     log.Println("🔒 Protected routes: /user/*, /admin/*")
-    log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /events/*, /health, /")
+    log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
     log.Println("👑 Admin routes: /admin/* (admin role required)")
-    log.Println("⚡ Rate limited routes: /events/* (10/min per IP)")
     log.Println("🎯 Gateway listening on port 3000")
     
     if err := app.Listen(":3000"); err != nil {
