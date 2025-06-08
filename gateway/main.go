@@ -418,9 +418,17 @@ app.Get("/user/qr/admin/events/:event_id/attendance", adminOnly, func(c *fiber.C
 
 // QR Admin routes - forward to user-service
 app.All("/admin/qr/*", adminOnly, func(c *fiber.Ctx) error {
-    // Strip /admin prefix and forward to user-service QR endpoints
-    newPath := strings.TrimPrefix(c.OriginalURL(), "/admin")
-    target := "http://user-service:3002" + newPath
+    // Map /admin/qr/* to /qr/admin/* in user-service
+    qrPath := strings.TrimPrefix(c.Path(), "/admin/qr")
+    if qrPath == "" {
+        qrPath = "/"
+    }
+    target := "http://user-service:3002/qr/admin" + qrPath
+    
+    // Preserve query parameters
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
     
     // Aggiungi header personalizzato per identificare richieste dal Gateway
     c.Set("X-Gateway-Request", "gateway-v1.0")
