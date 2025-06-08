@@ -416,7 +416,21 @@ app.Get("/user/qr/admin/events/:event_id/attendance", adminOnly, func(c *fiber.C
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------
 
-// Admin routes - richiedono ruolo admin
+// QR Admin routes - forward to user-service
+app.All("/admin/qr/*", adminOnly, func(c *fiber.Ctx) error {
+    // Strip /admin prefix and forward to user-service QR endpoints
+    newPath := strings.TrimPrefix(c.OriginalURL(), "/admin")
+    target := "http://user-service:3002" + newPath
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    
+    log.Printf("QR_ADMIN_PROXY: %s %s -> %s [IP: %s, User: %s, Role: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c), getUserRole(c))
+    return proxy.Do(c, target)
+})
+
+// Admin routes - richiedono ruolo admin (altri endpoint)
 app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
     // Strip /admin prefix and forward to auth-service
     newPath := strings.TrimPrefix(c.OriginalURL(), "/admin")
