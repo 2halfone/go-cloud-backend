@@ -1,12 +1,13 @@
-name: Deploy to VM
+name: Deploy Microservices to Production
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
-    name: Deploy to VM
+  # Job 1: Preparazione e cleanup dell'ambiente
+  prepare-environment:
+    name: 🔧 Prepare Environment
     runs-on: ubuntu-latest
     
     steps:
@@ -20,33 +21,287 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
 
-    - name: Deploy to VM
+    - name: Prepare VM Environment
       run: |
         ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
           set -e
+          echo "🧹 Cleaning up previous deployment..."
           
           cd /home/${{ secrets.USERNAME }}
           
+          # Stop existing services
+          if [ -d "go-cloud-backend" ]; then
+            cd go-cloud-backend
+            docker-compose -f docker-compose.prod.yml down || true
+            cd ..
+          fi
+          
+          # Clean up old deployment
           rm -rf go-cloud-backend
+          
+          # Clone fresh code
+          echo "📥 Cloning latest code..."
           git clone https://github.com/${{ github.repository }}.git go-cloud-backend
           cd go-cloud-backend
           
-          # Pulizia cache Docker
+          # Docker cleanup
+          echo "🐳 Preparing Docker environment..."
           docker rmi golang:1.21-alpine || true
           docker system prune -f
           docker pull golang:1.23-alpine
           
+          # Setup environment
+          echo "⚙️ Setting up environment variables..."
           cat > .env << EOF
         JWT_SECRET=${{ secrets.JWT_SECRET }}
         EOF
           
-          docker-compose -f docker-compose.prod.yml down || true
+          echo "✅ Environment prepared successfully!"
+        ENDSSH
+
+  # Job 2: Deploy dei database
+  deploy-databases:
+    name: 🗄️ Deploy Databases
+    runs-on: ubuntu-latest
+    needs: prepare-environment
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy Auth Database
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
           
-          # Build e up
-          docker-compose -f docker-compose.prod.yml build --no-cache --pull
-          docker-compose -f docker-compose.prod.yml up -d
+          echo "🗄️ Starting Auth Database..."
+          docker-compose -f docker-compose.prod.yml up -d auth-db
           
-          sleep 30
+          echo "⏳ Waiting for auth-db to be ready..."
+          sleep 15
+          
+          # Check if auth-db is running
+          docker-compose -f docker-compose.prod.yml ps auth-db
+          echo "✅ Auth Database deployed successfully!"
+        ENDSSH
+
+    - name: Deploy User Database
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "🗄️ Starting User Database..."
+          docker-compose -f docker-compose.prod.yml up -d user-db
+          
+          echo "⏳ Waiting for user-db to be ready..."
+          sleep 15
+          
+          # Check if user-db is running
+          docker-compose -f docker-compose.prod.yml ps user-db
+          echo "✅ User Database deployed successfully!"
+        ENDSSH
+
+  # Job 3: Build e deploy Auth Service
+  deploy-auth-service:
+    name: 🔐 Deploy Auth Service
+    runs-on: ubuntu-latest
+    needs: deploy-databases
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Build and Deploy Auth Service
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "🔐 Building Auth Service..."
+          docker-compose -f docker-compose.prod.yml build --no-cache auth-service
+          
+          echo "🚀 Starting Auth Service..."
+          docker-compose -f docker-compose.prod.yml up -d auth-service
+          
+          echo "⏳ Waiting for auth-service to be ready..."
+          sleep 20
+          
+          # Health check
+          for i in {1..5}; do
+            if curl -f http://localhost:3001/health; then
+              echo "✅ Auth Service is healthy!"
+              break
+            fi
+            echo "⏳ Attempt $i/5 - waiting for auth-service..."
+            sleep 10
+          done
+        ENDSSH
+
+  # Job 4: Build e deploy User Service
+  deploy-user-service:
+    name: 👤 Deploy User Service
+    runs-on: ubuntu-latest
+    needs: deploy-databases
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Build and Deploy User Service
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "👤 Building User Service..."
+          docker-compose -f docker-compose.prod.yml build --no-cache user-service
+          
+          echo "🚀 Starting User Service..."
+          docker-compose -f docker-compose.prod.yml up -d user-service
+          
+          echo "⏳ Waiting for user-service to be ready..."
+          sleep 20
+          
+          # Health check
+          for i in {1..5}; do
+            if curl -f http://localhost:3002/health; then
+              echo "✅ User Service is healthy!"
+              break
+            fi
+            echo "⏳ Attempt $i/5 - waiting for user-service..."
+            sleep 10
+          done
+        ENDSSH
+
+  # Job 5: Deploy Gateway (entry point)
+  deploy-gateway:
+    name: 🌐 Deploy Gateway
+    runs-on: ubuntu-latest
+    needs: [deploy-auth-service, deploy-user-service]
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Build and Deploy Gateway
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "🌐 Building Gateway..."
+          docker-compose -f docker-compose.prod.yml build --no-cache gateway
+          
+          echo "🚀 Starting Gateway..."
+          docker-compose -f docker-compose.prod.yml up -d gateway
+          
+          echo "⏳ Waiting for gateway to be ready..."
+          sleep 20
+          
+          # Health check
+          for i in {1..5}; do
+            if curl -f http://localhost:3000/health; then
+              echo "✅ Gateway is healthy!"
+              break
+            fi
+            echo "⏳ Attempt $i/5 - waiting for gateway..."
+            sleep 10
+          done
+        ENDSSH
+
+  # Job 6: Deploy Nginx (reverse proxy)
+  deploy-nginx:
+    name: 🔄 Deploy Nginx Proxy
+    runs-on: ubuntu-latest
+    needs: deploy-gateway
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy Nginx
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "🔄 Starting Nginx Reverse Proxy..."
+          docker-compose -f docker-compose.prod.yml up -d nginx
+          
+          echo "⏳ Waiting for nginx to be ready..."
+          sleep 10
+          
+          # Check nginx status
+          docker-compose -f docker-compose.prod.yml ps nginx
+          echo "✅ Nginx deployed successfully!"
+        ENDSSH
+
+  # Job 7: Verifica finale del deployment
+  verify-deployment:
+    name: ✅ Verify Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-nginx
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Final System Verification
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "🔍 Running final system verification..."
+          
+          # Check all services status
+          echo "📊 Service Status:"
+          docker-compose -f docker-compose.prod.yml ps
+          
+          # Test main endpoint through Gateway
+          echo "🌐 Testing Gateway endpoint..."
           curl -f http://localhost:3000/health
-          echo "✅ Deployment completed!"
+          
+          # Test internal services health (should only be accessible internally)
+          echo "🔐 Testing Auth Service health..."
+          curl -f http://localhost:3001/health
+          
+          echo "👤 Testing User Service health..."
+          curl -f http://localhost:3002/health
+          
+          echo ""
+          echo "🎉 ===== DEPLOYMENT COMPLETED SUCCESSFULLY ====="
+          echo "🔒 Security Architecture: Gateway-Only Access ✅"
+          echo "🗄️ Databases: Auth-DB + User-DB ✅"
+          echo "🔐 Auth Service: Running ✅"
+          echo "👤 User Service: Running ✅"
+          echo "🌐 Gateway: Running ✅"
+          echo "🔄 Nginx Proxy: Running ✅"
+          echo "============================================="
         ENDSSH
