@@ -1,6 +1,8 @@
 package main
 
 import (
+    "encoding/base64"
+    "fmt"
     "log"
     "os"
     "strconv"
@@ -12,6 +14,7 @@ import (
     "github.com/gofiber/fiber/v2/middleware/cors"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
+    "github.com/skip2/go-qrcode"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -23,51 +26,204 @@ type User struct {
     Name      string    `json:"name" db:"name"`
     LastName  string    `json:"last_name" db:"last_name"`
     Status    string    `json:"status" db:"status"`
+    Role      string    `json:"role" db:"role"`
     Timestamp time.Time `json:"timestamp" db:"timestamp"`
 }
 
-// Request payload per creare/aggiornare utente
+// AttendanceEvent rappresenta un evento di presenza con QR
+type AttendanceEvent struct {
+    ID          int       `json:"id" db:"id"`
+    EventID     string    `json:"event_id" db:"event_id"`
+    EventName   string    `json:"event_name" db:"event_name"`
+    Date        time.Time `json:"date" db:"date"`
+    QRJWT       string    `json:"-" db:"qr_jwt"`
+    QRImagePath string    `json:"qr_image_path,omitempty" db:"qr_image_path"`
+    ExpiresAt   time.Time `json:"expires_at" db:"expires_at"`
+    CreatedBy   int       `json:"created_by" db:"created_by"`
+    CreatedAt   time.Time `json:"created_at" db:"created_at"`
+    IsActive    bool      `json:"is_active" db:"is_active"`
+}
+
+// Attendance rappresenta la presenza di un utente
+type Attendance struct {
+    ID          int       `json:"id" db:"id"`
+    UserID      int       `json:"user_id" db:"user_id"`
+    EventID     string    `json:"event_id" db:"event_id"`
+    Timestamp   time.Time `json:"timestamp" db:"timestamp"`
+    Name        string    `json:"name" db:"name"`
+    Surname     string    `json:"surname" db:"surname"`
+    Status      string    `json:"status" db:"status"`
+    Motivazione string    `json:"motivazione,omitempty" db:"motivazione"`
+    CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
+// QR JWT Claims per il contenuto del QR code
+type QRJWTClaims struct {
+    EventID   string `json:"event_id"`
+    EventName string `json:"event_name"`
+    Date      string `json:"date"`
+    CreatedBy int    `json:"created_by"`
+    jwt.RegisteredClaims
+}
+
+// QRContent rappresenta il contenuto del QR code
+type QRContent struct {
+    JWT     string `json:"jwt"`
+    Type    string `json:"type"`
+    Version string `json:"version"`
+}
+
+// Request per generare QR (admin only)
+type GenerateQRRequest struct {
+    EventName    string `json:"event_name"`
+    Date         string `json:"date"`
+    ExpiresHours int    `json:"expires_hours"`
+}
+
+// Request per scansionare QR e registrare presenza
+type AttendanceRequest struct {
+    QRContent   QRContent `json:"qr_content"`
+    Status      string    `json:"status"`
+    Motivazione string    `json:"motivazione,omitempty"`
+}
+
+// ValidStatuses definisce gli status validi per la presenza
+var ValidStatuses = []string{
+    "presente", "vacation", "hospital", "family", 
+    "sick", "personal", "business", "other",
+}
+
+// Funzioni helper per JWT QR
+func generateQRJWT(eventID, eventName, date string, createdBy int) (string, error) {
+    // Calcola scadenza (fine giornata)
+    dateTime, err := time.Parse("2006-01-02", date)
+    if err != nil {
+        return "", fmt.Errorf("formato data non valido: %v", err)
+    }
+    
+    // Scadenza a fine giornata
+    expiresAt := time.Date(dateTime.Year(), dateTime.Month(), dateTime.Day(), 23, 59, 59, 0, dateTime.Location())
+    
+    claims := QRJWTClaims{
+        EventID:   eventID,
+        EventName: eventName,
+        Date:      date,
+        CreatedBy: createdBy,
+        RegisteredClaims: jwt.RegisteredClaims{
+            Issuer:    "attendance-system",
+            Subject:   eventID,
+            ExpiresAt: jwt.NewNumericDate(expiresAt),
+            IssuedAt:  jwt.NewNumericDate(time.Now()),
+        },
+    }
+    
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString(jwtSecret)
+}
+
+func validateQRJWT(tokenString string) (*QRJWTClaims, error) {
+    token, err := jwt.ParseWithClaims(tokenString, &QRJWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+        return jwtSecret, nil
+    })
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    if claims, ok := token.Claims.(*QRJWTClaims); ok && token.Valid {
+        return claims, nil
+    }
+    
+    return nil, fmt.Errorf("token non valido")
+}
+
+func isValidStatus(status string) bool {
+    for _, valid := range ValidStatuses {
+        if status == valid {
+            return true
+        }
+    }
+    return false
+}
+
+func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
+    user := c.Locals("user").(*jwt.Token)
+    claims := user.Claims.(jwt.MapClaims)
+    
+    userIDFloat, ok := claims["user_id"].(float64)
+    if !ok {
+        return 0, "", "", "", fmt.Errorf("user_id non trovato nel token")
+    }
+    userID := int(userIDFloat)
+    
+    // Recupera dettagli user dal database
+    var name, surname, role string
+    query := `SELECT name, last_name, role FROM users WHERE id = $1`
+    err := database.DB.QueryRow(query, userID).Scan(&name, &surname, &role)
+    if err != nil {
+        return 0, "", "", "", fmt.Errorf("utente non trovato: %v", err)
+    }
+    
+    return userID, name, surname, role, nil
+}
+
+func hasUserScannedEvent(userID int, eventID string) (bool, error) {
+    var count int
+    query := `SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND event_id = $2`
+    err := database.DB.QueryRow(query, userID, eventID).Scan(&count)
+    return count > 0, err
+}
+
+func generateQRImage(content string) (string, error) {
+    // Genera QR code come base64
+    qr, err := qrcode.Encode(content, qrcode.Medium, 256)
+    if err != nil {
+        return "", err
+    }
+    
+    return base64.StdEncoding.EncodeToString(qr), nil
+}
+
+// Middleware per verificare ruolo admin
+func adminOnly(c *fiber.Ctx) error {
+    _, _, _, role, err := getUserFromJWT(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Errore autenticazione",
+        })
+    }
+    
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Accesso negato: richiesti privilegi admin",
+        })
+    }
+    
+    return c.Next()
+}
 type UserRequest struct {
     Name     string `json:"name"`
     LastName string `json:"last_name"`
     Status   string `json:"status"`
 }
 
-// QR scan request structure
-type QRScanRequest struct {
-    QRCode   string `json:"qr_code"`
-    Location string `json:"location"`
+// Response structures
+type QRGenerateResponse struct {
+    EventID     string    `json:"event_id"`
+    EventName   string    `json:"event_name"`
+    Date        string    `json:"date"`
+    QRImage     string    `json:"qr_image"`
+    ExpiresAt   time.Time `json:"expires_at"`
+    CreatedAt   time.Time `json:"created_at"`
 }
 
-// QR scan data structure
-type QRScan struct {
-    QRCode    string    `json:"qr_code"`
-    Location  string    `json:"location"`
+type AttendanceResponse struct {
+    Message   string    `json:"message"`
+    EventID   string    `json:"event_id"`
+    EventName string    `json:"event_name"`
+    Status    string    `json:"status"`
     Timestamp time.Time `json:"timestamp"`
 }
-
-// User choice request structure
-type UserChoiceRequest struct {
-    Choice   string                 `json:"choice"`
-    QRCode   string                 `json:"qr_code"`
-    Location string                 `json:"location"`
-    Metadata map[string]interface{} `json:"metadata"`
-}
-
-// User choice data structure
-type UserChoice struct {
-    ID        string                 `json:"id"`
-    UserEmail string                 `json:"user_email"`
-    QRCode    string                 `json:"qr_code"`
-    Choice    string                 `json:"choice"`
-    Location  string                 `json:"location"`
-    Metadata  map[string]interface{} `json:"metadata"`
-    Timestamp time.Time              `json:"timestamp"`
-}
-
-// In-memory storage for QR scans and user choices (for demo purposes)
-var qrScans []QRScan
-var userChoices []UserChoice
 
 // Response per lista utenti con paginazione
 type UsersResponse struct {
@@ -285,29 +441,6 @@ func healthHandler(c *fiber.Ctx) error {
     })
 }
 
-func qrScanHandler(c *fiber.Ctx) error {
-    var req QRScanRequest
-    if err := c.BodyParser(&req); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Payload non valido",
-        })
-    }
-
-    scan := QRScan{
-        QRCode:    req.QRCode,
-        Location:  req.Location,
-        Timestamp: time.Now(),
-    }
-    qrScans = append(qrScans, scan)
-
-    return c.JSON(fiber.Map{
-        "message":   "QR code scansionato con successo",
-        "qr_code":   req.QRCode,
-        "location":  req.Location,
-        "timestamp": scan.Timestamp,
-    })
-}
-
 func userProfileHandler(c *fiber.Ctx) error {
     user := c.Locals("user").(*jwt.Token)
     claims := user.Claims.(jwt.MapClaims)
@@ -317,56 +450,6 @@ func userProfileHandler(c *fiber.Ctx) error {
         "email":   email,
         "name":    "Mario Rossi",
         "userId":  "abc123",
-    })
-}
-
-func saveChoiceHandler(c *fiber.Ctx) error {
-    user := c.Locals("user").(*jwt.Token)
-    claims := user.Claims.(jwt.MapClaims)
-    email := claims["email"].(string)
-
-    var req UserChoiceRequest
-    if err := c.BodyParser(&req); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Payload non valido",
-        })
-    }
-
-    choiceID := time.Now().Format("20060102150405")
-    choice := UserChoice{
-        ID:        choiceID,
-        UserEmail: email,
-        QRCode:    req.QRCode,
-        Choice:    req.Choice,
-        Location:  req.Location,
-        Metadata:  req.Metadata,
-        Timestamp: time.Now(),
-    }
-
-    userChoices = append(userChoices, choice)
-
-    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-        "message": "Scelta salvata con successo",
-        "choice":  choice,
-    })
-}
-
-func getUserChoicesHandler(c *fiber.Ctx) error {
-    user := c.Locals("user").(*jwt.Token)
-    claims := user.Claims.(jwt.MapClaims)
-    email := claims["email"].(string)
-
-    var userChoicesFiltered []UserChoice
-    for _, choice := range userChoices {
-        if choice.UserEmail == email {
-            userChoicesFiltered = append(userChoicesFiltered, choice)
-        }
-    }
-
-    return c.JSON(fiber.Map{
-        "user":    email,
-        "choices": userChoicesFiltered,
-        "count":   len(userChoicesFiltered),
     })
 }
 
@@ -424,23 +507,31 @@ func main() {
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For,X-Gateway-Request",
         AllowCredentials: true,
         MaxAge:           300, // 5 minuti
-    }))
-
-    // Middleware per bloccare accessi diretti (opzionale in sviluppo)
-    // app.Use(gatewayOnly)    // Endpoint pubblici
+    }))    // Middleware per bloccare accessi diretti (opzionale in sviluppo)
+    // app.Use(gatewayOnly)
+    
+    // Endpoint pubblici
     app.Get("/health", healthHandler)
-    app.Post("/qr/scan", qrScanHandler)
 
     // JWT middleware per endpoint protetti
     app.Use("/user", jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
     }))
+    
+    // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
+    app.Use("/qr/admin", adminOnly)
+    app.Post("/qr/admin/generate", generateQRHandler)
+    app.Get("/qr/admin/events", getQRListHandler)
+    app.Get("/qr/admin/events/:event_id/attendance", getEventAttendanceHandler)
+    
+    // QR Attendance System - User endpoints (protetti da JWT)
+    app.Post("/qr/scan", scanQRHandler)
+    app.Get("/qr/attendance/history", getAttendanceHistoryHandler)
+    app.Get("/qr/attendance/today", getTodayAttendanceHandler)
 
-    // Endpoint protetti
+    // Endpoint protetti utente
     app.Get("/user/profile", userProfileHandler)
-    app.Post("/user/choice", saveChoiceHandler)
-    app.Get("/user/choices", getUserChoicesHandler)
 
     // Endpoint per gestione utenti
     app.Get("/users", getUsersHandler)

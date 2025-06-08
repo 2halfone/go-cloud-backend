@@ -262,8 +262,9 @@ func main() {
         c.Set("X-Gateway-Request", "gateway-v1.0")
         
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
-    })    // QR code scanning - pubblico
+        return proxy.Do(c, target)    })
+
+    // QR Attendance System - Public QR scanning
     app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
         target := "http://user-service:3002/qr/scan"
         
@@ -295,10 +296,11 @@ func main() {
         return c.JSON(fiber.Map{
             "message": "Go Cloud Backend Gateway API",
             "version": "1.0.0",
-            "status":  "running",
-            "endpoints": fiber.Map{
+            "status":  "running",            "endpoints": fiber.Map{
                 "auth":   "/auth/register, /auth/login",
                 "user":   "/user/profile (protected), /user/scan-qr (public)",
+                "qr_user": "/user/qr/scan, /user/qr/attendance/history, /user/qr/attendance/today (JWT protected)",
+                "qr_admin": "/user/qr/admin/generate, /user/qr/admin/events, /user/qr/admin/events/:id/attendance (admin only)",
                 "admin":  "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
                 "health": "/health",
             },
@@ -347,6 +349,70 @@ app.All("/user/*", func(c *fiber.Ctx) error {
 })
 
 // -------------------------------------------------------
+// QR Attendance System Routes (JWT Protected)
+// -------------------------------------------------------
+
+// QR User routes (JWT protected)
+app.Post("/user/qr/scan", func(c *fiber.Ctx) error {
+    target := "http://user-service:3002/qr/scan"
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_SCAN_AUTH_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Get("/user/qr/attendance/history", func(c *fiber.Ctx) error {
+    target := "http://user-service:3002/qr/attendance/history"
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_HISTORY_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Get("/user/qr/attendance/today", func(c *fiber.Ctx) error {
+    target := "http://user-service:3002/qr/attendance/today"
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_TODAY_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// QR Admin routes (JWT + Admin role required)
+app.Post("/user/qr/admin/generate", adminOnly, func(c *fiber.Ctx) error {
+    target := "http://user-service:3002/qr/admin/generate"
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_GENERATE_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Get("/user/qr/admin/events", adminOnly, func(c *fiber.Ctx) error {
+    target := "http://user-service:3002/qr/admin/events"
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_EVENTS_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Get("/user/qr/admin/events/:event_id/attendance", adminOnly, func(c *fiber.Ctx) error {
+    eventID := c.Params("event_id")
+    target := fmt.Sprintf("http://user-service:3002/qr/admin/events/%s/attendance", eventID)
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("QR_EVENT_ATTENDANCE_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// -------------------------------------------------------
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------
 
@@ -377,9 +443,10 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
     log.Println("   ✅ CORS Protection")
     log.Println("   ✅ Request/Response Logging")
     log.Println("   ✅ Error Handling & Recovery")
-    
-    log.Println("🔒 Protected routes: /user/*, /admin/*")
+      log.Println("🔒 Protected routes: /user/*, /admin/*")
     log.Println("🌐 Public routes: /auth/*, /user/scan-qr, /health, /")
+    log.Println("📱 QR User routes: /user/qr/scan, /user/qr/attendance/* (JWT protected)")
+    log.Println("👑 QR Admin routes: /user/qr/admin/* (admin role required)")
     log.Println("👑 Admin routes: /admin/* (admin role required)")
     log.Println("🎯 Gateway listening on port 3000")
     
