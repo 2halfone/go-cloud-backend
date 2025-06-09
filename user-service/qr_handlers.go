@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "log"
+    "strings"
     "time"
     "user-service/database"
 
@@ -37,24 +38,27 @@ func generateQRHandler(c *fiber.Ctx) error {
             "error": "Formato data non valido (YYYY-MM-DD)",
         })
     }
-    
-    userID, _, _, _, err := getUserFromJWT(c)
+      userID, _, _, _, err := getUserFromJWT(c)
     if err != nil {
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Errore autenticazione",
         })
     }
     
-    // Genera event_id univoco
-    eventID := fmt.Sprintf("daily-%s", req.Date)
+    // Genera event_id univoco basato su nome evento + data
+    eventNameSlug := strings.ToLower(strings.ReplaceAll(req.EventName, " ", "-"))
+    eventID := fmt.Sprintf("%s-%s", eventNameSlug, req.Date)
     
-    // Controlla se esiste già un QR per questa data
+    log.Printf("generateQRHandler: Generated event_id: %s", eventID)
+    
+    // Controlla se esiste già questo specifico evento (non solo la data)
     var existingID int
     checkQuery := `SELECT id FROM attendance_events WHERE event_id = $1`
     err = database.DB.QueryRow(checkQuery, eventID).Scan(&existingID)
     if err == nil {
+        log.Printf("generateQRHandler: Event already exists: %s", eventID)
         return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-            "error": "QR per questa data già esistente",
+            "error": fmt.Sprintf("Evento '%s' per la data %s già esistente", req.EventName, req.Date),
             "event_id": eventID,
         })
     }
@@ -98,8 +102,7 @@ func generateQRHandler(c *fiber.Ctx) error {
         INSERT INTO attendance_events (event_id, event_name, date, qr_jwt, expires_at, created_by)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id`
-    
-    var newEventID int
+      var newEventID int
     err = database.DB.QueryRow(insertQuery, eventID, req.EventName, dateTime, qrJWT, expiresAt, userID).Scan(&newEventID)
     if err != nil {
         log.Printf("Error creating attendance event: %v", err)
@@ -107,6 +110,8 @@ func generateQRHandler(c *fiber.Ctx) error {
             "error": "Errore salvataggio evento",
         })
     }
+    
+    log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":         "QR generato con successo",
