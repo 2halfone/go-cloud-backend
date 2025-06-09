@@ -193,6 +193,98 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
     return userID, name, surname, role, nil
 }
 
+// Create dynamic attendance table for each event
+func createAttendanceTable(eventID string) error {
+    // Sanitize table name (replace hyphens with underscores, ensure valid SQL identifier)
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Create table with proper structure
+    createTableQuery := fmt.Sprintf(`
+        CREATE TABLE IF NOT EXISTS %s (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            surname VARCHAR(255) NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(50) DEFAULT 'present',
+            motivazione TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id)
+        )`, tableName)
+    
+    _, err := database.DB.Exec(createTableQuery)
+    if err != nil {
+        return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
+    }
+    
+    // Create indexes for performance
+    indexQueries := []string{
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
+    }
+    
+    for _, indexQuery := range indexQueries {
+        _, err = database.DB.Exec(indexQuery)
+        if err != nil {
+            log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+        }
+    }
+    
+    log.Printf("✅ Created attendance table: %s", tableName)
+    return nil
+}
+
+// Check if user has scanned for a specific event (using dynamic table)
+func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Check if table exists first
+    var tableExists bool
+    checkTableQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err := database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
+    if err != nil {
+        return false, err
+    }
+    
+    if !tableExists {
+        // Table doesn't exist, so user hasn't scanned
+        return false, nil
+    }
+    
+    // Check if user exists in the event's attendance table
+    var count int
+    query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = $1", tableName)
+    err = database.DB.QueryRow(query, userID).Scan(&count)
+    if err != nil {
+        return false, err
+    }
+    
+    return count > 0, nil
+}
+
+// Insert attendance record into dynamic table
+func insertAttendanceRecord(userID int, eventID, name, surname, status, motivazione string) error {
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    insertQuery := fmt.Sprintf(`
+        INSERT INTO %s (user_id, name, surname, status, motivazione) 
+        VALUES ($1, $2, $3, $4, $5)
+    `, tableName)
+    
+    _, err := database.DB.Exec(insertQuery, userID, name, surname, status, motivazione)
+    if err != nil {
+        return fmt.Errorf("failed to insert attendance record into %s: %v", tableName, err)
+    }
+    
+    log.Printf("✅ Inserted attendance record for user %d into table %s", userID, tableName)
+    return nil
+}
+
 func hasUserScannedEvent(userID int, eventID string) (bool, error) {
     var count int
     query := `SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND event_id = $2`

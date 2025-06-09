@@ -1,3 +1,4 @@
+
 -- user-service/migrations/0005_add_role_to_users.sql
 -- Aggiunge il campo role alla tabella users per distinguere user/admin
 

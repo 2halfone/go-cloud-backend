@@ -30,15 +30,15 @@ func generateQRHandler(c *fiber.Ctx) error {
             "error": "Nome evento e data sono richiesti",
         })
     }
-    
-    // Valida formato data
+      // Valida formato data
     _, err := time.Parse("2006-01-02", req.Date)
     if err != nil {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Formato data non valido (YYYY-MM-DD)",
         })
     }
-      userID, _, _, _, err := getUserFromJWT(c)
+    
+    userID, _, _, _, err := getUserFromJWT(c)
     if err != nil {
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Errore autenticazione",
@@ -62,8 +62,7 @@ func generateQRHandler(c *fiber.Ctx) error {
             "event_id": eventID,
         })
     }
-    
-    // Genera JWT per QR
+      // Genera JWT per QR
     qrJWT, err := generateQRJWT(eventID, req.EventName, req.Date, userID)
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -96,13 +95,13 @@ func generateQRHandler(c *fiber.Ctx) error {
     // Calcola scadenza
     dateTime, _ := time.Parse("2006-01-02", req.Date)
     expiresAt := time.Date(dateTime.Year(), dateTime.Month(), dateTime.Day(), 23, 59, 59, 0, dateTime.Location())
-    
-    // Salva nel database
+      // Salva nel database
     insertQuery := `
         INSERT INTO attendance_events (event_id, event_name, date, qr_jwt, expires_at, created_by)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id`
-      var newEventID int
+    
+    var newEventID int
     err = database.DB.QueryRow(insertQuery, eventID, req.EventName, dateTime, qrJWT, expiresAt, userID).Scan(&newEventID)
     if err != nil {
         log.Printf("Error creating attendance event: %v", err)
@@ -112,6 +111,13 @@ func generateQRHandler(c *fiber.Ctx) error {
     }
     
     log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
+    
+    // Create dynamic attendance table for this event
+    err = createAttendanceTable(eventID)
+    if err != nil {
+        log.Printf("generateQRHandler: Warning - failed to create attendance table: %v", err)
+        // Don't fail the request, just log the warning
+    }
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":         "QR generato con successo",
@@ -172,10 +178,9 @@ func scanQRHandler(c *fiber.Ctx) error {
             "error": "Evento non trovato o non attivo",
         })
     }
-    
-    // Controlla se user ha già scansionato per questo evento (solo per user normali)
+      // Controlla se user ha già scansionato per questo evento (solo per user normali)
     if role != "admin" {
-        hasScanned, err := hasUserScannedEvent(userID, qrClaims.EventID)
+        hasScanned, err := hasUserScannedEventDynamic(userID, qrClaims.EventID)
         if err != nil {
             log.Printf("Error checking user scan: %v", err)
             return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -190,15 +195,8 @@ func scanQRHandler(c *fiber.Ctx) error {
         }
     }
     
-    // Registra presenza
-    insertQuery := `
-        INSERT INTO attendance (user_id, event_id, name, surname, status, motivazione)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, timestamp`
-    
-    var attendanceID int
-    var timestamp time.Time
-    err = database.DB.QueryRow(insertQuery, userID, qrClaims.EventID, name, surname, req.Status, req.Motivazione).Scan(&attendanceID, &timestamp)
+    // Registra presenza nella tabella dinamica dell'evento
+    err = insertAttendanceRecord(userID, qrClaims.EventID, name, surname, req.Status, req.Motivazione)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -207,12 +205,12 @@ func scanQRHandler(c *fiber.Ctx) error {
     }
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-        "message":       "Presenza registrata con successo",
-        "attendance_id": attendanceID,
-        "event_id":      qrClaims.EventID,
-        "event_name":    qrClaims.EventName,
-        "status":        req.Status,
-        "timestamp":     timestamp.Format(time.RFC3339),
+        "message":     "Presenza registrata con successo",
+        "event_id":    qrClaims.EventID,
+        "event_name":  qrClaims.EventName,
+        "status":      req.Status,
+        "timestamp":   time.Now().Format(time.RFC3339),
+        "table_name":  "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_"),
     })
 }
 
@@ -398,77 +396,105 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
     eventID := c.Params("event_id")
     if eventID == "" {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Event ID richiesto",
+            "error": "Event ID is required",
         })
     }
     
-    // Recupera info evento
-    var eventName string
-    var eventDate time.Time
-    eventQuery := `SELECT event_name, date FROM attendance_events WHERE event_id = $1`
-    err := database.DB.QueryRow(eventQuery, eventID).Scan(&eventName, &eventDate)
+    // Verify admin role
+    _, _, _, role, err := getUserFromJWT(c)
     if err != nil {
-        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-            "error": "Evento non trovato",
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Authentication error",
         })
     }
     
-    // Recupera presenze
-    attendanceQuery := `
-        SELECT a.user_id, a.name, a.surname, a.status, a.timestamp, a.motivazione
-        FROM attendance a
-        WHERE a.event_id = $1
-        ORDER BY a.timestamp ASC`
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Admin access required",
+        })
+    }
     
-    rows, err := database.DB.Query(attendanceQuery, eventID)
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Check if table exists
+    var tableExists bool
+    checkTableQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err = database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
     if err != nil {
-        log.Printf("Error querying event attendance: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Errore recupero presenze evento",
+            "error": "Database error",
+        })
+    }
+    
+    if !tableExists {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Event not found or no attendance recorded",
+        })
+    }
+    
+    // Get attendance records
+    query := fmt.Sprintf(`
+        SELECT user_id, name, surname, timestamp, status, motivazione 
+        FROM %s 
+        ORDER BY timestamp ASC
+    `, tableName)
+    
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        log.Printf("Error querying attendance records: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Error fetching attendance records",
         })
     }
     defer rows.Close()
     
     var attendances []map[string]interface{}
-    statusCounts := make(map[string]int)
-    
     for rows.Next() {
         var userID int
         var name, surname, status, motivazione string
         var timestamp time.Time
         
-        err := rows.Scan(&userID, &name, &surname, &status, &timestamp, &motivazione)
+        err := rows.Scan(&userID, &name, &surname, &timestamp, &status, &motivazione)
         if err != nil {
-            log.Printf("Error scanning attendance: %v", err)
+            log.Printf("Error scanning attendance record: %v", err)
             continue
         }
         
-        attendance := map[string]interface{}{
+        record := map[string]interface{}{
             "user_id":   userID,
             "name":      name,
             "surname":   surname,
-            "status":    status,
             "timestamp": timestamp.Format(time.RFC3339),
+            "status":    status,
         }
         
         if motivazione != "" {
-            attendance["motivazione"] = motivazione
+            record["motivazione"] = motivazione
         }
         
-        attendances = append(attendances, attendance)
-        statusCounts[status]++
+        attendances = append(attendances, record)
     }
     
-    return c.JSON(fiber.Map{
-        "event": fiber.Map{
-            "event_id":   eventID,
-            "event_name": eventName,
-            "date":       eventDate.Format("2006-01-02"),
-        },
-        "attendances": attendances,
-        "summary": fiber.Map{
-            "total":  len(attendances),
-            "status": statusCounts,
-        },
+    // Get event details
+    var eventName string
+    var eventDate time.Time
+    eventQuery := `SELECT event_name, date FROM attendance_events WHERE event_id = $1`
+    err = database.DB.QueryRow(eventQuery, eventID).Scan(&eventName, &eventDate)
+    if err != nil {
+        log.Printf("Error getting event details: %v", err)
+        eventName = "Unknown Event"
+    }
+      return c.JSON(fiber.Map{
+        "event_id":     eventID,
+        "event_name":   eventName,
+        "event_date":   eventDate.Format("2006-01-02"),
+        "table_name":   tableName,
+        "attendances":  attendances,
+        "total_count":  len(attendances),
     })
 }
