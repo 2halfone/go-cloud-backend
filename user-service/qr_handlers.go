@@ -569,10 +569,10 @@ func getEventUsersHandler(c *fiber.Ctx) error {
             "error": "Event not found",
         })
     }
-    
-    // Get all users with their status (using enhanced schema)
+      // Get all users with their status (using enhanced schema with null safety)
     query := fmt.Sprintf(`
-        SELECT user_id, name, surname, status, scanned_at, updated_at, updated_by
+        SELECT user_id, name, surname, COALESCE(status, 'not_registered') as status, 
+               scanned_at, updated_at, updated_by
         FROM %s 
         ORDER BY surname ASC, name ASC
     `, tableName)
@@ -607,9 +607,8 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         if status == "" {
             status = "not_registered"
         }
-        
-        user := map[string]interface{}{
-            "user_id":    userID.Int64,
+          user := map[string]interface{}{
+            "user_id":    int(userID.Int64), // Cast to int for Flutter compatibility
             "name":       name,
             "surname":    surname,
             "status":     status,
@@ -627,7 +626,7 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         }
         
         if updatedBy.Valid {
-            user["updated_by"] = updatedBy.Int64
+            user["updated_by"] = int(updatedBy.Int64) // Cast to int for Flutter compatibility
         } else {
             user["updated_by"] = nil
         }
@@ -839,12 +838,11 @@ func getEventStatistics(tableName string) map[string]interface{} {
             "attendance_rate": 0.0,
         }
     }
-    
-    // Get status breakdown
+      // Get status breakdown with null safety using COALESCE
     statusQuery := fmt.Sprintf(`
-        SELECT status, COUNT(*) as count 
+        SELECT COALESCE(status, 'not_registered') as status, COUNT(*) as count 
         FROM %s 
-        GROUP BY status
+        GROUP BY COALESCE(status, 'not_registered')
     `, tableName)
     
     rows, err := database.DB.Query(statusQuery)
