@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "log"
+    "net/http"
     "os"
     "strings"
     "time"
@@ -283,6 +284,49 @@ func main() {
             "timestamp": time.Now().Format(time.RFC3339),
             "version":   "1.0.0",
         })
+    })
+
+    // Internal health check endpoint for debugging service connectivity
+    app.Get("/health/services", func(c *fiber.Ctx) error {
+        services := fiber.Map{
+            "gateway": "healthy",
+        }
+        
+        // Test user-service connectivity
+        userServiceStatus := "unhealthy"
+        userServiceError := ""
+        
+        // Try DNS first
+        resp1, err1 := http.Get("http://user-service:3002/health")
+        if err1 == nil && resp1.StatusCode == 200 {
+            userServiceStatus = "healthy (DNS)"
+            resp1.Body.Close()
+        } else {
+            // Try IP fallback
+            resp2, err2 := http.Get("http://172.18.0.4:3002/health")
+            if err2 == nil && resp2.StatusCode == 200 {
+                userServiceStatus = "healthy (IP)"
+                resp2.Body.Close()
+            } else {
+                if err1 != nil {
+                    userServiceError = fmt.Sprintf("DNS: %v", err1)
+                }
+                if err2 != nil {
+                    userServiceError += fmt.Sprintf(" | IP: %v", err2)
+                }
+            }
+        }
+        
+        services["user-service"] = fiber.Map{
+            "status": userServiceStatus,
+            "error":  userServiceError,
+        }
+        
+        return c.JSON(fiber.Map{
+            "status":    "gateway-healthy",
+            "services":  services,
+            "timestamp": time.Now().Format(time.RFC3339),
+        })
     })    // Aggiungiamo una route per la root path con debug logging
     app.Get("/", func(c *fiber.Ctx) error {
         log.Printf("ROOT_PATH_REQUEST: Method=%s Path=%s IP=%s UserAgent='%s' Headers=%v", 
@@ -416,26 +460,51 @@ app.Get("/user/qr/admin/events/:event_id/attendance", adminOnly, func(c *fiber.C
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------
 
-// QR Admin routes - forward to user-service
+// QR Admin routes - forward to user-service with DNS fallback
 app.All("/admin/qr/*", adminOnly, func(c *fiber.Ctx) error {
     // Map /admin/qr/* to /qr/admin/* in user-service
     qrPath := strings.TrimPrefix(c.Path(), "/admin/qr")
     if qrPath == "" {
         qrPath = "/"
     }
-    target := "http://user-service:3002/qr/admin" + qrPath
+    
+    // Try DNS first, fallback to IP if DNS fails
+    targets := []string{
+        "http://user-service:3002/qr/admin" + qrPath,
+        "http://172.18.0.4:3002/qr/admin" + qrPath, // Fallback IP
+    }
     
     // Preserve query parameters
+    queryParams := ""
     if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
-        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+        queryParams = "?" + strings.Split(c.OriginalURL(), "?")[1]
     }
     
     // Aggiungi header personalizzato per identificare richieste dal Gateway
     c.Set("X-Gateway-Request", "gateway-v1.0")
     
-    log.Printf("QR_ADMIN_PROXY: %s %s -> %s [IP: %s, User: %s, Role: %s]", 
-        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c), getUserRole(c))
-    return proxy.Do(c, target)
+    var lastErr error
+    for i, baseTarget := range targets {
+        target := baseTarget + queryParams
+        log.Printf("QR_ADMIN_PROXY_ATTEMPT_%d: %s %s -> %s [IP: %s, User: %s, Role: %s]", 
+            i+1, c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c), getUserRole(c))
+        
+        err := proxy.Do(c, target)
+        if err == nil {
+            log.Printf("QR_ADMIN_PROXY_SUCCESS: %s %s -> %s", 
+                c.Method(), c.OriginalURL(), target)
+            return nil
+        }
+        
+        lastErr = err
+        log.Printf("QR_ADMIN_PROXY_FAILED_%d: %s %s -> %s [Error: %v]", 
+            i+1, c.Method(), c.OriginalURL(), target, err)
+    }
+    
+    // If all targets fail, return the last error
+    log.Printf("QR_ADMIN_PROXY_ALL_FAILED: %s %s [Final Error: %v]", 
+        c.Method(), c.OriginalURL(), lastErr)
+    return lastErr
 })
 
 // Admin routes - richiedono ruolo admin (altri endpoint)
