@@ -452,9 +452,7 @@ func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
 }
 
 // Insert or update attendance record for QR scan (trigger auto-sets status to 'present')
-func insertAttendanceRecord(userID int, eventID, name, surname, status, motivazione string) error {
-    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
-    
+func insertAttendanceRecord(tableName string, userID int, userName, userSurname string) error {
     // Check if user already exists in this event
     checkSQL := fmt.Sprintf("SELECT id FROM %s WHERE user_id = $1", tableName)
     var existingID int
@@ -462,28 +460,28 @@ func insertAttendanceRecord(userID int, eventID, name, surname, status, motivazi
     
     if err == sql.ErrNoRows {
         // User doesn't exist, insert new record
-        // The trigger will automatically set status to 'present' and update scanned_at
+        // The trigger will automatically set status to 'present' and scanned_at
         insertSQL := fmt.Sprintf(`
-            INSERT INTO %s (user_id, name, surname, scanned_at, motivazione, updated_at) 
-            VALUES ($1, $2, $3, NOW(), $4, NOW())`, tableName)
+            INSERT INTO %s (user_id, name, surname, scanned_at, status, updated_at) 
+            VALUES ($1, $2, $3, NOW(), 'not_registered', NOW())`, tableName)
         
-        if _, err := database.DB.Exec(insertSQL, userID, name, surname, motivazione); err != nil {
+        if _, err := database.DB.Exec(insertSQL, userID, userName, userSurname); err != nil {
             return fmt.Errorf("failed to insert attendance record: %v", err)
         }
         
-        log.Printf("✅ Inserted new attendance record for user %d (trigger auto-set status to present)", userID)
+        log.Printf("✅ Inserted new attendance record for user %d (trigger will set to present)", userID)
     } else if err == nil {
         // User exists, update scanned_at (trigger will auto-set status to 'present')
         updateSQL := fmt.Sprintf(`
             UPDATE %s 
-            SET scanned_at = NOW(), motivazione = $2, updated_at = NOW()
+            SET scanned_at = NOW(), status = 'present', updated_at = NOW()
             WHERE user_id = $1`, tableName)
         
-        if _, err := database.DB.Exec(updateSQL, userID, motivazione); err != nil {
+        if _, err := database.DB.Exec(updateSQL, userID); err != nil {
             return fmt.Errorf("failed to update attendance record: %v", err)
         }
         
-        log.Printf("✅ Updated scan time for user %d (trigger auto-set status to present)", userID)
+        log.Printf("✅ Updated scan time for user %d (status set to present)", userID)
     } else {
         return fmt.Errorf("failed to check existing attendance: %v", err)
     }
@@ -933,12 +931,13 @@ func main() {
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
     }))
-    
-    // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
+      // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
     app.Use("/qr/admin", adminOnly)
     app.Post("/qr/admin/generate", generateQRHandler)
     app.Get("/qr/admin/events", getQRListHandler)
     app.Get("/qr/admin/events/:event_id/attendance", getEventAttendanceHandler)
+    app.Get("/qr/admin/events/:event_id/users", getEventUsersHandler)
+    app.Patch("/qr/admin/events/:event_id/users/:user_id/status", updateUserStatusHandler)
     
     // QR Attendance System - User endpoints (protetti da JWT)
     app.Post("/qr/scan", scanQRHandler)

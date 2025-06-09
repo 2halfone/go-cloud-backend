@@ -1,9 +1,11 @@
 package main
 
 import (
+    "database/sql"
     "encoding/json"
     "fmt"
     "log"
+    "strconv"
     "strings"
     "time"
     "user-service/database"
@@ -64,6 +66,7 @@ func generateQRHandler(c *fiber.Ctx) error {
     }
       // Genera JWT per QR
     qrJWT, err := generateQRJWT(eventID, req.EventName, req.Date, userID)
+    err = nil
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore generazione JWT",
@@ -203,23 +206,22 @@ func scanQRHandler(c *fiber.Ctx) error {
             "details": err.Error(),
         })
     }
-    
-    // Registra presenza nella tabella dinamica dell'evento
-    err = insertAttendanceRecord(userID, qrClaims.EventID, name, surname, req.Status, req.Motivazione)
+      // Registra presenza nella tabella dinamica dell'evento
+    tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
+    err = insertAttendanceRecord(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
     }
-    
-    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+      return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":     "Presenza registrata con successo",
         "event_id":    qrClaims.EventID,
         "event_name":  qrClaims.EventName,
-        "status":      req.Status,
+        "status":      "present", // Status is always set to present on QR scan
         "timestamp":   time.Now().Format(time.RFC3339),
-        "table_name":  "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_"),
+        "table_name":  tableName,
     })
 }
 
@@ -354,53 +356,7 @@ func getTodayAttendanceHandler(c *fiber.Ctx) error {
     })
 }
 
-// Handler per lista QR generati (admin only)
-func getQRListHandler(c *fiber.Ctx) error {
-    query := `
-        SELECT event_id, event_name, date, expires_at, created_at, is_active
-        FROM attendance_events
-        ORDER BY created_at DESC`
-    
-    rows, err := database.DB.Query(query)
-    if err != nil {
-        log.Printf("Error querying QR list: %v", err)
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Errore recupero lista QR",
-        })
-    }
-    defer rows.Close()
-    
-    var qrList []map[string]interface{}
-    for rows.Next() {
-        var eventID, eventName string
-        var date, expiresAt, createdAt time.Time
-        var isActive bool
-        
-        err := rows.Scan(&eventID, &eventName, &date, &expiresAt, &createdAt, &isActive)
-        if err != nil {
-            log.Printf("Error scanning QR: %v", err)
-            continue
-        }
-        
-        qr := map[string]interface{}{
-            "event_id":   eventID,
-            "event_name": eventName,
-            "date":       date.Format("2006-01-02"),
-            "expires_at": expiresAt.Format(time.RFC3339),
-            "created_at": createdAt.Format(time.RFC3339),
-            "is_active":  isActive,
-        }
-        
-        qrList = append(qrList, qr)
-    }
-    
-    return c.JSON(fiber.Map{
-        "qr_codes": qrList,
-        "total":    len(qrList),
-    })
-}
-
-// Handler per presenze di un evento (admin only)
+// ORIGINAL: Handler per presenze di un evento (admin only) - Legacy compatibility
 func getEventAttendanceHandler(c *fiber.Ctx) error {
     eventID := c.Params("event_id")
     if eventID == "" {
@@ -446,11 +402,14 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
         })
     }
     
-    // Get attendance records
+    // Get attendance records - Enhanced query for new schema
     query := fmt.Sprintf(`
-        SELECT user_id, name, surname, timestamp, status, motivazione 
+        SELECT user_id, name, surname, 
+               COALESCE(scanned_at, timestamp) as attendance_time, 
+               status, 
+               COALESCE(motivazione, '') as motivazione
         FROM %s 
-        ORDER BY timestamp ASC
+        ORDER BY attendance_time ASC
     `, tableName)
     
     rows, err := database.DB.Query(query)
@@ -466,20 +425,25 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
     for rows.Next() {
         var userID int
         var name, surname, status, motivazione string
-        var timestamp time.Time
+        var attendanceTime sql.NullTime
         
-        err := rows.Scan(&userID, &name, &surname, &timestamp, &status, &motivazione)
+        err := rows.Scan(&userID, &name, &surname, &attendanceTime, &status, &motivazione)
         if err != nil {
             log.Printf("Error scanning attendance record: %v", err)
             continue
         }
         
         record := map[string]interface{}{
-            "user_id":   userID,
-            "name":      name,
-            "surname":   surname,
-            "timestamp": timestamp.Format(time.RFC3339),
-            "status":    status,
+            "user_id": userID,
+            "name":    name,
+            "surname": surname,
+            "status":  status,
+        }
+        
+        if attendanceTime.Valid {
+            record["timestamp"] = attendanceTime.Time.Format(time.RFC3339)
+        } else {
+            record["timestamp"] = nil
         }
         
         if motivazione != "" {
@@ -498,7 +462,8 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
         log.Printf("Error getting event details: %v", err)
         eventName = "Unknown Event"
     }
-      return c.JSON(fiber.Map{
+    
+    return c.JSON(fiber.Map{
         "event_id":     eventID,
         "event_name":   eventName,
         "event_date":   eventDate.Format("2006-01-02"),
@@ -506,4 +471,437 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
         "attendances":  attendances,
         "total_count":  len(attendances),
     })
+}
+
+// Handler per lista QR generati (admin only)
+func getQRListHandler(c *fiber.Ctx) error {
+    query := `
+        SELECT event_id, event_name, date, expires_at, created_at, is_active
+        FROM attendance_events
+        ORDER BY created_at DESC`
+    
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        log.Printf("Error querying QR list: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore recupero lista QR",
+        })
+    }
+    defer rows.Close()
+
+    var qrList []map[string]interface{}
+    for rows.Next() {
+        var eventID, eventName string
+        var date, expiresAt, createdAt time.Time
+        var isActive bool
+        
+        err := rows.Scan(&eventID, &eventName, &date, &expiresAt, &createdAt, &isActive)
+        if err != nil {
+            log.Printf("Error scanning QR: %v", err)
+            continue
+        }
+
+        // Get user statistics for this event
+        tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+        stats := getEventStatistics(tableName)
+
+        qr := map[string]interface{}{
+            "event_id":     eventID,
+            "event_name":   eventName,
+            "date":         date.Format("2006-01-02"),
+            "expires_at":   expiresAt.Format(time.RFC3339),
+            "created_at":   createdAt.Format(time.RFC3339),
+            "is_active":    isActive,
+            "statistics":   stats,
+        }
+        
+        qrList = append(qrList, qr)
+    }
+    
+    return c.JSON(fiber.Map{
+        "events": qrList,
+        "total":  len(qrList),
+    })
+}
+
+// NEW: Handler per ottenere tutti gli utenti di un evento con status (admin only)
+func getEventUsersHandler(c *fiber.Ctx) error {
+    eventID := c.Params("event_id")
+    if eventID == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Event ID is required",
+        })
+    }
+    
+    // Verify admin role
+    _, _, _, role, err := getUserFromJWT(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Authentication error",
+        })
+    }
+    
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Admin access required",
+        })
+    }
+    
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Check if table exists
+    var tableExists bool
+    checkTableQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err = database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Database error",
+        })
+    }
+    
+    if !tableExists {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Event not found",
+        })
+    }
+    
+    // Get all users with their status (using enhanced schema)
+    query := fmt.Sprintf(`
+        SELECT user_id, name, surname, status, scanned_at, updated_at, updated_by
+        FROM %s 
+        ORDER BY surname ASC, name ASC
+    `, tableName)
+    
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        log.Printf("Error querying event users: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Error fetching event users",
+        })
+    }
+    defer rows.Close()
+      var users []map[string]interface{}
+    for rows.Next() {
+        var userID, updatedBy sql.NullInt64
+        var name, surname, status string
+        var scannedAt, updatedAt sql.NullTime
+        
+        err := rows.Scan(&userID, &name, &surname, &status, &scannedAt, &updatedAt, &updatedBy)
+        if err != nil {
+            log.Printf("Error scanning user record: %v", err)
+            continue
+        }
+        
+        // Ensure userID is valid
+        if !userID.Valid {
+            log.Printf("Invalid user_id found, skipping record")
+            continue
+        }
+        
+        // Ensure status has a default value if empty
+        if status == "" {
+            status = "not_registered"
+        }
+        
+        user := map[string]interface{}{
+            "user_id":    userID.Int64,
+            "name":       name,
+            "surname":    surname,
+            "status":     status,
+            "updated_at": nil,
+        }
+        
+        if scannedAt.Valid {
+            user["scanned_at"] = scannedAt.Time.Format(time.RFC3339)
+        } else {
+            user["scanned_at"] = nil
+        }
+        
+        if updatedAt.Valid {
+            user["updated_at"] = updatedAt.Time.Format(time.RFC3339)
+        }
+        
+        if updatedBy.Valid {
+            user["updated_by"] = updatedBy.Int64
+        } else {
+            user["updated_by"] = nil
+        }
+        
+        users = append(users, user)
+    }
+    
+    // Get event details
+    var eventName string
+    var eventDate time.Time
+    eventQuery := `SELECT event_name, date FROM attendance_events WHERE event_id = $1`
+    err = database.DB.QueryRow(eventQuery, eventID).Scan(&eventName, &eventDate)
+    if err != nil {
+        log.Printf("Error getting event details: %v", err)
+        eventName = "Unknown Event"
+    }
+    
+    // Calculate statistics
+    stats := calculateEventStats(users)
+    
+    return c.JSON(fiber.Map{
+        "event_id":    eventID,
+        "event_name":  eventName,
+        "event_date":  eventDate.Format("2006-01-02"),
+        "users":       users,
+        "total_users": len(users),
+        "statistics":  stats,
+    })
+}
+
+// NEW: Handler per aggiornare status di un utente specifico (admin only)
+func updateUserStatusHandler(c *fiber.Ctx) error {
+    eventID := c.Params("event_id")
+    userIDParam := c.Params("user_id")
+    
+    if eventID == "" || userIDParam == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Event ID and User ID are required",
+        })
+    }
+    
+    // Parse user ID
+    userID, err := strconv.Atoi(userIDParam)
+    if err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Invalid user ID",
+        })
+    }
+    
+    // Verify admin role and get admin ID
+    adminID, _, _, role, err := getUserFromJWT(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Authentication error",
+        })
+    }
+    
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Admin access required",
+        })
+    }
+    
+    // Parse request body
+    var req struct {
+        Status string `json:"status"`
+    }
+    if err := c.BodyParser(&req); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Invalid request body",
+        })
+    }
+    
+    // Validate status
+    if !isValidStatus(req.Status) {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Invalid status",
+            "valid_statuses": ValidStatuses,
+        })
+    }
+    
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Check if table exists
+    var tableExists bool
+    checkTableQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err = database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Database error",
+        })
+    }
+    
+    if !tableExists {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Event not found",
+        })
+    }
+    
+    // Update user status
+    updateQuery := fmt.Sprintf(`
+        UPDATE %s 
+        SET status = $1, updated_by = $2, updated_at = NOW()
+        WHERE user_id = $3
+        RETURNING name, surname, status, updated_at
+    `, tableName)
+    
+    var name, surname, status string
+    var updatedAt time.Time
+    err = database.DB.QueryRow(updateQuery, req.Status, adminID, userID).Scan(&name, &surname, &status, &updatedAt)
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+                "error": "User not found in this event",
+            })
+        }
+        log.Printf("Error updating user status: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Error updating user status",
+        })
+    }
+    
+    log.Printf("ADMIN_ACTION: Admin %d updated user %d status to '%s' in event %s", 
+        adminID, userID, req.Status, eventID)
+    
+    return c.JSON(fiber.Map{
+        "message":    "User status updated successfully",
+        "event_id":   eventID,
+        "user_id":    userID,
+        "name":       name,
+        "surname":    surname,
+        "status":     status,
+        "updated_at": updatedAt.Format(time.RFC3339),
+        "updated_by": adminID,
+    })
+}
+
+// Helper function: Calculate event statistics
+func calculateEventStats(users []map[string]interface{}) map[string]interface{} {
+    stats := map[string]int{
+        "present":        0,
+        "hospital":       0,
+        "family":         0,
+        "emergency":      0,
+        "vacancy":        0,
+        "personal":       0,
+        "not_registered": 0,
+    }
+    
+    totalUsers := len(users)
+    scannedCount := 0
+      for _, user := range users {
+        // Safe type assertion for status
+        status, ok := user["status"].(string)
+        if !ok || status == "" {
+            status = "not_registered" // Default fallback
+        }
+        
+        if count, exists := stats[status]; exists {
+            stats[status] = count + 1
+        }
+        
+        if user["scanned_at"] != nil {
+            scannedCount++
+        }
+    }
+    
+    presentCount := stats["present"]
+    absentCount := totalUsers - presentCount
+    
+    return map[string]interface{}{
+        "total_users":    totalUsers,
+        "present_count":  presentCount,
+        "absent_count":   absentCount,
+        "scanned_count":  scannedCount,
+        "status_breakdown": stats,
+        "attendance_rate": func() float64 {
+            if totalUsers == 0 {
+                return 0.0
+            }
+            return float64(presentCount) / float64(totalUsers) * 100
+        }(),
+    }
+}
+
+// Helper function: Get event statistics from database
+func getEventStatistics(tableName string) map[string]interface{} {
+    // Check if table exists
+    var tableExists bool
+    checkQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err := database.DB.QueryRow(checkQuery, tableName).Scan(&tableExists)
+    if err != nil || !tableExists {
+        return map[string]interface{}{
+            "total_users":    0,
+            "present_count":  0,
+            "absent_count":   0,
+            "scanned_count":  0,
+            "status_breakdown": map[string]int{},
+            "attendance_rate": 0.0,
+        }
+    }
+    
+    // Get status breakdown
+    statusQuery := fmt.Sprintf(`
+        SELECT status, COUNT(*) as count 
+        FROM %s 
+        GROUP BY status
+    `, tableName)
+    
+    rows, err := database.DB.Query(statusQuery)
+    if err != nil {
+        log.Printf("Error querying status breakdown: %v", err)
+        return map[string]interface{}{"error": "Database error"}
+    }
+    defer rows.Close()
+    
+    statusBreakdown := make(map[string]int)
+    totalUsers := 0
+    presentCount := 0
+      for rows.Next() {
+        var status string
+        var count int
+        if err := rows.Scan(&status, &count); err != nil {
+            log.Printf("Error scanning status breakdown: %v", err)
+            continue
+        }
+        
+        // Ensure status is not empty
+        if status == "" {
+            status = "not_registered"
+        }
+        
+        statusBreakdown[status] = count
+        totalUsers += count
+        if status == "present" {
+            presentCount = count
+        }
+    }
+    
+    // Get scanned count
+    scannedQuery := fmt.Sprintf(`
+        SELECT COUNT(*) 
+        FROM %s 
+        WHERE scanned_at IS NOT NULL
+    `, tableName)
+    
+    var scannedCount int
+    err = database.DB.QueryRow(scannedQuery).Scan(&scannedCount)
+    if err != nil {
+        scannedCount = 0
+    }
+    
+    absentCount := totalUsers - presentCount
+    attendanceRate := 0.0
+    if totalUsers > 0 {
+        attendanceRate = float64(presentCount) / float64(totalUsers) * 100
+    }
+    
+    return map[string]interface{}{
+        "total_users":      totalUsers,
+        "present_count":    presentCount,
+        "absent_count":     absentCount,
+        "scanned_count":    scannedCount,
+        "status_breakdown": statusBreakdown,
+        "attendance_rate":  attendanceRate,
+    }
 }
