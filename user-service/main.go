@@ -106,10 +106,10 @@ type AttendanceRequest struct {
     Motivazione string    `json:"motivazione,omitempty"`
 }
 
-// ValidStatuses definisce gli status validi per la presenza
+// ValidStatuses definisce gli status validi per la presenza/assenza
 var ValidStatuses = []string{
-    "presente", "vacation", "hospital", "family", 
-    "sick", "personal", "business", "other",
+    "present", "hospital", "family", "emergency", 
+    "vacancy", "personal", "not_registered",
 }
 
 // Funzioni helper per JWT QR
@@ -306,21 +306,23 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
     return userID, name, surname, role, nil
 }
 
-// Create dynamic attendance table for each event
+// Create dynamic attendance table for each event with enhanced status management
 func createAttendanceTable(eventID string) error {
     // Sanitize table name (replace hyphens with underscores, ensure valid SQL identifier)
     tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
     
-    // Create table with proper structure
+    // Create table with enhanced structure for status management
     createTableQuery := fmt.Sprintf(`
         CREATE TABLE IF NOT EXISTS %s (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
             surname VARCHAR(255) NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status VARCHAR(50) DEFAULT 'present',
+            timestamp TIMESTAMP NULL,
+            status VARCHAR(50) DEFAULT 'not_registered' CHECK (status IN ('present', 'hospital', 'family', 'emergency', 'vacancy', 'personal', 'not_registered')),
             motivazione TEXT,
+            updated_by INTEGER REFERENCES users(id),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id)
         )`, tableName)
@@ -330,10 +332,23 @@ func createAttendanceTable(eventID string) error {
         return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
     }
     
+    // Create trigger for automatic status update on QR scan
+    triggerQuery := fmt.Sprintf(`
+        CREATE OR REPLACE TRIGGER trg_%s_status_update 
+        BEFORE INSERT OR UPDATE ON %s
+        FOR EACH ROW EXECUTE FUNCTION update_status_on_scan()`, tableName, tableName)
+    
+    _, err = database.DB.Exec(triggerQuery)
+    if err != nil {
+        log.Printf("Warning: failed to create trigger for table %s: %v", tableName, err)
+    }
+    
     // Create indexes for performance
     indexQueries := []string{
         fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
         fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
     }
     
     for _, indexQuery := range indexQueries {
@@ -343,7 +358,53 @@ func createAttendanceTable(eventID string) error {
         }
     }
     
-    log.Printf("✅ Created attendance table: %s", tableName)
+    // Auto-populate all users for this event
+    err = populateEventUsers(tableName)
+    if err != nil {
+        log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
+    }
+    
+    log.Printf("✅ Created attendance table: %s with enhanced status management", tableName)
+    return nil
+}
+
+// Populate all active users into event table with default status
+func populateEventUsers(tableName string) error {
+    // Get all active users
+    query := `SELECT id, name, last_name FROM users WHERE status = 'active'`
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        return fmt.Errorf("failed to query users: %v", err)
+    }
+    defer rows.Close()
+    
+    userCount := 0
+    for rows.Next() {
+        var userID int
+        var name, lastName string
+        
+        err := rows.Scan(&userID, &name, &lastName)
+        if err != nil {
+            log.Printf("Error scanning user: %v", err)
+            continue
+        }
+        
+        // Insert user with default status 'not_registered'
+        insertQuery := fmt.Sprintf(`
+            INSERT INTO %s (user_id, name, surname, status, timestamp, updated_at) 
+            VALUES ($1, $2, $3, $4, NULL, NOW()) 
+            ON CONFLICT (user_id) DO NOTHING`, tableName)
+        
+        _, err = database.DB.Exec(insertQuery, userID, name, lastName, "not_registered")
+        if err != nil {
+            log.Printf("Error inserting user %d into %s: %v", userID, tableName, err)
+            continue
+        }
+        
+        userCount++
+    }
+    
+    log.Printf("✅ Populated %d users in event table %s", userCount, tableName)
     return nil
 }
 
@@ -380,18 +441,25 @@ func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
     return count > 0, nil
 }
 
-// Insert attendance record into dynamic table
+// Insert or update attendance record for QR scan (sets status to 'present')
 func insertAttendanceRecord(userID int, eventID, name, surname, status, motivazione string) error {
     tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
     
-    insertQuery := fmt.Sprintf(`
-        INSERT INTO %s (user_id, name, surname, status, motivazione) 
-        VALUES ($1, $2, $3, $4, $5)
+    // For QR scans, we update existing record with timestamp and 'present' status
+    upsertQuery := fmt.Sprintf(`
+        INSERT INTO %s (user_id, name, surname, timestamp, status, motivazione, updated_at) 
+        VALUES ($1, $2, $3, NOW(), 'present', $4, NOW())
+        ON CONFLICT (user_id) 
+        DO UPDATE SET 
+            timestamp = NOW(),
+            status = 'present',
+            motivazione = EXCLUDED.motivazione,
+            updated_at = NOW()
     `, tableName)
     
-    _, err := database.DB.Exec(insertQuery, userID, name, surname, status, motivazione)
+    _, err := database.DB.Exec(upsertQuery, userID, name, surname, motivazione)
     if err != nil {
-        return fmt.Errorf("failed to insert attendance record into %s: %v", tableName, err)
+        return fmt.Errorf("failed to insert/update attendance record in %s: %v", tableName, err)
     }
     
     log.Printf("✅ Inserted attendance record for user %d into table %s", userID, tableName)
