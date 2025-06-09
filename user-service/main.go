@@ -318,6 +318,7 @@ func createAttendanceTable(eventID string) error {
             user_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
             surname VARCHAR(255) NOT NULL,
+            scanned_at TIMESTAMPTZ,
             timestamp TIMESTAMP NULL,
             status VARCHAR(50) DEFAULT 'not_registered' CHECK (status IN ('present', 'hospital', 'family', 'emergency', 'vacancy', 'personal', 'not_registered')),
             motivazione TEXT,
@@ -331,39 +332,48 @@ func createAttendanceTable(eventID string) error {
     if err != nil {
         return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
     }
-    
-    // Create trigger for automatic status update on QR scan
-    triggerQuery := fmt.Sprintf(`
-        CREATE OR REPLACE TRIGGER trg_%s_status_update 
-        BEFORE INSERT OR UPDATE ON %s
-        FOR EACH ROW EXECUTE FUNCTION update_status_on_scan()`, tableName, tableName)
-    
-    _, err = database.DB.Exec(triggerQuery)
-    if err != nil {
-        log.Printf("Warning: failed to create trigger for table %s: %v", tableName, err)
-    }
-    
-    // Create indexes for performance
-    indexQueries := []string{
-        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
-        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
-        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
-        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
-    }
-    
-    for _, indexQuery := range indexQueries {
-        _, err = database.DB.Exec(indexQuery)
-        if err != nil {
-            log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+
+    // Use the new automated setup function from migration 0009
+    setupSQL := "SELECT setup_new_attendance_table($1)"
+    if _, err := database.DB.Exec(setupSQL, tableName); err != nil {
+        log.Printf("Warning: Failed to setup automated features for table %s: %v", tableName, err)
+        
+        // Fallback to manual setup if automated function fails
+        log.Printf("Falling back to manual setup for table %s", tableName)
+        
+        // Manual trigger creation
+        triggerQuery := fmt.Sprintf(`
+            CREATE OR REPLACE TRIGGER tr_%s_auto_present 
+            BEFORE INSERT OR UPDATE ON %s
+            FOR EACH ROW EXECUTE FUNCTION auto_set_present_on_scan()`, tableName, tableName)
+        
+        if _, err := database.DB.Exec(triggerQuery); err != nil {
+            log.Printf("Warning: failed to create trigger for table %s: %v", tableName, err)
         }
+        
+        // Manual index creation
+        indexQueries := []string{
+            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
+            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
+            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
+            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
+            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_scanned_at ON %s(scanned_at)", tableName, tableName),
+        }
+        
+        for _, indexQuery := range indexQueries {
+            if _, err := database.DB.Exec(indexQuery); err != nil {
+                log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+            }
+        }
+        
+        // Manual user population
+        if err := populateEventUsers(tableName); err != nil {
+            log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
+        }
+    } else {
+        log.Printf("✅ Completed automated setup for table: %s", tableName)
     }
-    
-    // Auto-populate all users for this event
-    err = populateEventUsers(tableName)
-    if err != nil {
-        log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
-    }
-    
+
     log.Printf("✅ Created attendance table: %s with enhanced status management", tableName)
     return nil
 }
@@ -441,28 +451,43 @@ func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
     return count > 0, nil
 }
 
-// Insert or update attendance record for QR scan (sets status to 'present')
+// Insert or update attendance record for QR scan (trigger auto-sets status to 'present')
 func insertAttendanceRecord(userID int, eventID, name, surname, status, motivazione string) error {
     tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
     
-    // For QR scans, we update existing record with timestamp and 'present' status
-    upsertQuery := fmt.Sprintf(`
-        INSERT INTO %s (user_id, name, surname, timestamp, status, motivazione, updated_at) 
-        VALUES ($1, $2, $3, NOW(), 'present', $4, NOW())
-        ON CONFLICT (user_id) 
-        DO UPDATE SET 
-            timestamp = NOW(),
-            status = 'present',
-            motivazione = EXCLUDED.motivazione,
-            updated_at = NOW()
-    `, tableName)
+    // Check if user already exists in this event
+    checkSQL := fmt.Sprintf("SELECT id FROM %s WHERE user_id = $1", tableName)
+    var existingID int
+    err := database.DB.QueryRow(checkSQL, userID).Scan(&existingID)
     
-    _, err := database.DB.Exec(upsertQuery, userID, name, surname, motivazione)
-    if err != nil {
-        return fmt.Errorf("failed to insert/update attendance record in %s: %v", tableName, err)
+    if err == sql.ErrNoRows {
+        // User doesn't exist, insert new record
+        // The trigger will automatically set status to 'present' and update scanned_at
+        insertSQL := fmt.Sprintf(`
+            INSERT INTO %s (user_id, name, surname, scanned_at, motivazione, updated_at) 
+            VALUES ($1, $2, $3, NOW(), $4, NOW())`, tableName)
+        
+        if _, err := database.DB.Exec(insertSQL, userID, name, surname, motivazione); err != nil {
+            return fmt.Errorf("failed to insert attendance record: %v", err)
+        }
+        
+        log.Printf("✅ Inserted new attendance record for user %d (trigger auto-set status to present)", userID)
+    } else if err == nil {
+        // User exists, update scanned_at (trigger will auto-set status to 'present')
+        updateSQL := fmt.Sprintf(`
+            UPDATE %s 
+            SET scanned_at = NOW(), motivazione = $2, updated_at = NOW()
+            WHERE user_id = $1`, tableName)
+        
+        if _, err := database.DB.Exec(updateSQL, userID, motivazione); err != nil {
+            return fmt.Errorf("failed to update attendance record: %v", err)
+        }
+        
+        log.Printf("✅ Updated scan time for user %d (trigger auto-set status to present)", userID)
+    } else {
+        return fmt.Errorf("failed to check existing attendance: %v", err)
     }
     
-    log.Printf("✅ Inserted attendance record for user %d into table %s", userID, tableName)
     return nil
 }
 
