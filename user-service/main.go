@@ -857,9 +857,10 @@ func main() {
 
     // Endpoint per gestione utenti
     app.Get("/users", getUsersHandler)
-    app.Get("/users/:id", getUserByIDHandler)
-    app.Post("/users", createUserHandler)
+    app.Get("/users/:id", getUserByIDHandler)    app.Post("/users", createUserHandler)
     app.Put("/users/:id", updateUserHandler)
-    app.Delete("/users/:id", deleteUserHandler)    log.Println("🚀 User Service completo avviato sulla porta 3002")
+    app.Delete("/users/:id", deleteUserHandler)
+    
+    log.Println("🚀 User Service completo avviato sulla porta 3002")
     log.Fatal(app.Listen(":3002"))
 }
