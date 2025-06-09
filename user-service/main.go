@@ -1,6 +1,7 @@
 package main
 
 import (
+    "database/sql"
     "encoding/base64"
     "fmt"
     "log"
@@ -15,19 +16,37 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
+    _ "github.com/lib/pq"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
+// Auth service database connection
+var authDB *sql.DB
+
 // User rappresenta un utente nella tabella users
 type User struct {
     ID        int       `json:"id" db:"id"`
+    Email     string    `json:"email,omitempty" db:"email"`
+    Username  string    `json:"username,omitempty" db:"username"`
     Name      string    `json:"name" db:"name"`
     LastName  string    `json:"last_name" db:"last_name"`
     Status    string    `json:"status" db:"status"`
     Role      string    `json:"role" db:"role"`
-    Timestamp time.Time `json:"timestamp" db:"timestamp"`
+    CreatedAt time.Time `json:"created_at" db:"created_at"`
+    UpdatedAt time.Time `json:"updated_at,omitempty" db:"updated_at"`
+}
+
+// AuthUser rappresenta un utente dalla auth-service database
+type AuthUser struct {
+    ID        int       `json:"id" db:"id"`
+    Email     string    `json:"email" db:"email"`
+    Username  string    `json:"username" db:"username"`
+    Name      string    `json:"name" db:"name"`
+    Surname   string    `json:"surname" db:"surname"`
+    Role      string    `json:"role" db:"role"`
+    CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
 // AttendanceEvent rappresenta un evento di presenza con QR
@@ -144,6 +163,100 @@ func isValidStatus(status string) bool {
         }
     }
     return false
+}
+
+// Connect to auth database for user synchronization
+func connectToAuthDB() error {
+    authDBURL := os.Getenv("AUTH_DATABASE_URL")
+    if authDBURL == "" {
+        return fmt.Errorf("AUTH_DATABASE_URL environment variable not set")
+    }
+    
+    var err error
+    authDB, err = sql.Open("postgres", authDBURL)
+    if err != nil {
+        return fmt.Errorf("failed to connect to auth database: %v", err)
+    }
+    
+    if err = authDB.Ping(); err != nil {
+        return fmt.Errorf("failed to ping auth database: %v", err)
+    }
+    
+    log.Println("✅ Connected to auth database for user sync")
+    return nil
+}
+
+// Get user from auth-service database
+func getUserFromAuthDB(userID int) (*AuthUser, error) {
+    query := `SELECT id, email, username, name, surname, role, created_at FROM users WHERE id = $1`
+    var user AuthUser
+    
+    err := authDB.QueryRow(query, userID).Scan(
+        &user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Role, &user.CreatedAt,
+    )
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    return &user, nil
+}
+
+// Check if user exists in user-service database
+func userExistsInUserService(userID int) (bool, error) {
+    var count int
+    query := `SELECT COUNT(*) FROM users WHERE id = $1`
+    err := database.DB.QueryRow(query, userID).Scan(&count)
+    if err != nil {
+        return false, err
+    }
+    return count > 0, nil
+}
+
+// Sync user from auth-service to user-service
+func syncUserFromAuthService(userID int) error {
+    // Check if user already exists in user-service
+    exists, err := userExistsInUserService(userID)
+    if err != nil {
+        return fmt.Errorf("failed to check user existence: %v", err)
+    }
+    
+    if exists {
+        log.Printf("User %d already exists in user-service", userID)
+        return nil
+    }
+    
+    // Get user from auth-service
+    authUser, err := getUserFromAuthDB(userID)
+    if err != nil {
+        return fmt.Errorf("failed to get user from auth-service: %v", err)
+    }
+    
+    // Insert user into user-service database with all auth fields
+    query := `INSERT INTO users (id, email, username, name, last_name, status, role, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+    _, err = database.DB.Exec(query, authUser.ID, authUser.Email, authUser.Username, authUser.Name, authUser.Surname, "active", authUser.Role, authUser.CreatedAt)
+    if err != nil {
+        return fmt.Errorf("failed to insert user into user-service: %v", err)
+    }
+    
+    log.Printf("✅ Successfully synced user %d (%s %s) from auth-service to user-service", 
+        authUser.ID, authUser.Name, authUser.Surname)
+    return nil
+}
+
+// Ensure user exists in user-service (auto-sync if missing)
+func ensureUserExists(userID int) error {
+    exists, err := userExistsInUserService(userID)
+    if err != nil {
+        return err
+    }
+    
+    if !exists {
+        log.Printf("User %d not found in user-service, attempting to sync from auth-service", userID)
+        return syncUserFromAuthService(userID)
+    }
+    
+    return nil
 }
 
 func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
@@ -389,15 +502,14 @@ func getUsersHandler(c *fiber.Ctx) error {
     // Query base e conteggio
     var query, countQuery string
     var args, countArgs []interface{}
-    
-    // Costruisci query in base ai filtri
+      // Costruisci query in base ai filtri
     if status != "" {
-        query = `SELECT id, name, last_name, status, timestamp FROM users WHERE status = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`
+        query = `SELECT id, name, last_name, status, created_at FROM users WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
         countQuery = `SELECT COUNT(*) FROM users WHERE status = $1`
         args = []interface{}{status, limit, offset}
         countArgs = []interface{}{status}
     } else {
-        query = `SELECT id, name, last_name, status, timestamp FROM users ORDER BY timestamp DESC LIMIT $1 OFFSET $2`
+        query = `SELECT id, name, last_name, status, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
         countQuery = `SELECT COUNT(*) FROM users`
         args = []interface{}{limit, offset}
         countArgs = []interface{}{}
@@ -412,11 +524,10 @@ func getUsersHandler(c *fiber.Ctx) error {
         })
     }
     defer rows.Close()
-    
-    var users []User
+      var users []User
     for rows.Next() {
         var user User
-        err := rows.Scan(&user.ID, &user.Name, &user.LastName, &user.Status, &user.Timestamp)
+        err := rows.Scan(&user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt)
         if err != nil {
             log.Printf("Error scanning user: %v", err)
             continue
@@ -452,12 +563,11 @@ func getUserByIDHandler(c *fiber.Ctx) error {
             "error": "ID utente non valido",
         })
     }
-    
-    query := `SELECT id, name, last_name, status, timestamp FROM users WHERE id = $1`
+      query := `SELECT id, name, last_name, status, created_at FROM users WHERE id = $1`
     var user User
     
     err = database.DB.QueryRow(query, id).Scan(
-        &user.ID, &user.Name, &user.LastName, &user.Status, &user.Timestamp,
+        &user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt,
     )
     
     if err != nil {
@@ -622,9 +732,80 @@ func jwtError(c *fiber.Ctx, err error) error {
     })
 }
 
+// Sync users from auth-service to local database
+func syncUsersFromAuthService() {
+    // Query all users from auth-service
+    authQuery := `SELECT id, email, username, name, surname, role, created_at FROM users`
+    rows, err := authDB.Query(authQuery)
+    if err != nil {
+        log.Printf("Error querying auth-service users: %v", err)
+        return
+    }
+    defer rows.Close()
+    
+    // Prepare statement for upsert
+    upsertStmt, err := database.DB.Prepare(`
+        INSERT INTO users (id, email, username, name, surname, role, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (id) DO UPDATE SET
+            email = EXCLUDED.email,
+            username = EXCLUDED.username,
+            name = EXCLUDED.name,
+            surname = EXCLUDED.surname,
+            role = EXCLUDED.role,
+            created_at = EXCLUDED.created_at
+    `)
+    if err != nil {
+        log.Printf("Error preparing upsert statement: %v", err)
+        return
+    }
+    defer upsertStmt.Close()
+    
+    // Sync each user
+    for rows.Next() {
+        var user AuthUser
+        if err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Role, &user.CreatedAt); err != nil {
+            log.Printf("Error scanning auth-service user: %v", err)
+            continue
+        }
+        
+        // Upsert user into local database
+        _, err := upsertStmt.Exec(user.ID, user.Email, user.Username, user.Name, user.Surname, user.Role, user.CreatedAt)
+        if err != nil {
+            log.Printf("Error upserting user %d: %v", user.ID, err)
+        } else {
+            log.Printf("Synchronized user %d from auth-service", user.ID)
+        }
+    }
+}
+
+// Connect to auth-service database
+func connectAuthServiceDB() {
+    var err error
+    authDB, err = sql.Open("postgres", "host=localhost port=5432 user=youruser dbname=authservice password=yourpassword sslmode=disable")
+    if err != nil {
+        log.Fatalf("Error connecting to auth-service database: %v", err)
+    }
+    
+    // Test the connection
+    err = authDB.Ping()
+    if err != nil {
+        log.Fatalf("Error pinging auth-service database: %v", err)
+    }
+    
+    log.Println("Connected to auth-service database")
+}
+
 func main() {
     // Initialize database connection
     database.Connect()
+    
+    // Connect to auth-service database for user synchronization
+    err := connectToAuthDB()
+    if err != nil {
+        log.Printf("Warning: Could not connect to auth-service database: %v", err)
+        log.Println("User synchronization will not be available")
+    }
     
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
@@ -679,8 +860,6 @@ func main() {
     app.Get("/users/:id", getUserByIDHandler)
     app.Post("/users", createUserHandler)
     app.Put("/users/:id", updateUserHandler)
-    app.Delete("/users/:id", deleteUserHandler)
-
-    log.Println("🚀 User Service completo avviato sulla porta 3002")
+    app.Delete("/users/:id", deleteUserHandler)    log.Println("🚀 User Service completo avviato sulla porta 3002")
     log.Fatal(app.Listen(":3002"))
 }

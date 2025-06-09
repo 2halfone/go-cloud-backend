@@ -192,7 +192,16 @@ func scanQRHandler(c *fiber.Ctx) error {
             return c.Status(fiber.StatusConflict).JSON(fiber.Map{
                 "error": "Hai già registrato la presenza per questo evento",
             })
-        }
+        }    }
+    
+    // Ensure user exists in user-service database (auto-sync from auth-service if needed)
+    err = ensureUserExists(userID)
+    if err != nil {
+        log.Printf("Error ensuring user exists: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore sincronizzazione utente",
+            "details": err.Error(),
+        })
     }
     
     // Registra presenza nella tabella dinamica dell'evento
