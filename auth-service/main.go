@@ -470,6 +470,50 @@ func gatewayOnly(c *fiber.Ctx) error {
     })
 }
 
+func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
+    log.Println("getUserFromJWT: Starting...")
+    
+    user := c.Locals("user")
+    if user == nil {
+        log.Println("getUserFromJWT: No user in context")
+        return 0, "", "", "", fmt.Errorf("utente non autenticato")
+    }
+
+    token, ok := user.(*jwt.Token)
+    if !ok {
+        log.Println("getUserFromJWT: Invalid token type")
+        return 0, "", "", "", fmt.Errorf("token non valido")
+    }
+
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok {
+        log.Println("getUserFromJWT: Invalid claims type")
+        return 0, "", "", "", fmt.Errorf("claims non validi")
+    }
+
+    log.Printf("getUserFromJWT: JWT claims: %v", claims)
+
+    userID, ok := claims["user_id"].(float64)
+    if !ok {
+        log.Println("getUserFromJWT: user_id not found in claims")
+        return 0, "", "", "", fmt.Errorf("user_id non trovato nel token")
+    }
+
+    email, _ := claims["email"].(string)
+    role, ok := claims["role"].(string)
+    if !ok {
+        role = "user" // default role
+    }
+
+    log.Printf("getUserFromJWT: Success - UserID: %d, Email: %s, Role: %s", int(userID), email, role)
+    
+    // Microservizi puri: usa solo dati dal JWT, no database query
+    name := email
+    surname := ""
+    
+    return int(userID), name, surname, role, nil
+}
+
 func main() {
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
