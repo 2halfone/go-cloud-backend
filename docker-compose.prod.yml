@@ -68,7 +68,6 @@ services:
       - user_db_data:/var/lib/postgresql/data
     networks:
       - microservices-net
-
   # --- User Service (aggiornato con database) ---
   user-service:
     build:
@@ -79,9 +78,12 @@ services:
     environment:
       # stringa di connessione al nuovo PostgreSQL
       USER_DATABASE_URL: postgres://user_admin:user_password@user-db:5432/users_db?sslmode=disable
+      # stringa di connessione al database auth-service per sincronizzazione utenti
+      AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
     depends_on:
       - user-db
+      - auth-db
     networks:
       - microservices-net
     restart: unless-stopped
