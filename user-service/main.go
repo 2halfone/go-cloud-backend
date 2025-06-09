@@ -168,24 +168,28 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
         return 0, "", "", "", fmt.Errorf("user_id non trovato nel token")
     }
     userID := int(userIDFloat)
-    
-    // Estrai il ruolo dal JWT invece del database
+      // Estrai il ruolo dal JWT invece del database
     role, ok := claims["role"].(string)
     if !ok {
         log.Printf("getUserFromJWT: role not found in JWT claims, defaulting to 'user'")
         role = "user"
     }
     
-    // Recupera solo nome e cognome dal database (la colonna role non esiste)
-    var name, surname string
-    query := `SELECT name, last_name FROM users WHERE id = $1`
-    err := database.DB.QueryRow(query, userID).Scan(&name, &surname)
-    if err != nil {
-        log.Printf("getUserFromJWT: Database error for user %d: %v", userID, err)
-        return 0, "", "", "", fmt.Errorf("utente non trovato: %v", err)
+    // Estrai name e surname dal JWT invece del database
+    name, ok := claims["name"].(string)
+    if !ok {
+        log.Printf("getUserFromJWT: name not found in JWT claims")
+        name = "Unknown"
     }
     
-    log.Printf("getUserFromJWT: Found user %d (%s %s) with role '%s' (from JWT)", userID, name, surname, role)
+    surname, ok := claims["surname"].(string)
+    if !ok {
+        log.Printf("getUserFromJWT: surname not found in JWT claims")
+        surname = "User"
+    }
+    
+    log.Printf("getUserFromJWT: Successfully extracted from JWT - userID=%d, name='%s', surname='%s', role='%s'", userID, name, surname, role)
+    
     return userID, name, surname, role, nil
 }
 

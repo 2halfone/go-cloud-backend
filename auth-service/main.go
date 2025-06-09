@@ -26,6 +26,8 @@ type User struct {
     ID        int       `json:"id"`
     Email     string    `json:"email"`
     Username  string    `json:"username,omitempty"`
+    Name      string    `json:"name,omitempty"`
+    Surname   string    `json:"surname,omitempty"`
     Password  string    `json:"-"` // hashed, non esposto nel JSON
     Role      string    `json:"role"`
     CreatedAt time.Time `json:"created_at"`
@@ -35,6 +37,8 @@ type User struct {
 type registerRequest struct {
     Email    string `json:"email"`
     Username string `json:"username"` // supporta anche username
+    Name     string `json:"name"`     // nome utente
+    Surname  string `json:"surname"`  // cognome utente
     Password string `json:"password"`
 }
 
@@ -44,9 +48,11 @@ func registerHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
         })
-    }    // TrimSpace su email, username e password
+    }    // TrimSpace su tutti i campi
     req.Email = strings.TrimSpace(req.Email)
     req.Username = strings.TrimSpace(req.Username)
+    req.Name = strings.TrimSpace(req.Name)
+    req.Surname = strings.TrimSpace(req.Surname)
     req.Password = strings.TrimSpace(req.Password)
 
     // Validazione formato email se email è fornita
@@ -55,14 +61,21 @@ func registerHandler(c *fiber.Ctx) error {
             return c.Status(400).JSON(fiber.Map{
                 "error": "Formato email non valido",
             })
-        }
-    }    // Validazione password (minimo 6 caratteri per Flutter)
+        }    }    // Validazione password (minimo 6 caratteri per Flutter)
     if len(req.Password) < 6 {
         return c.Status(400).JSON(fiber.Map{
             "error": "Password deve essere di almeno 6 caratteri",
             "code":  "PASSWORD_TOO_SHORT",
         })
-    }    // Controlla se l'utente esiste già nel database PostgreSQL
+    }
+
+    // Validazione campi obbligatori
+    if req.Name == "" || req.Surname == "" {
+        return c.Status(400).JSON(fiber.Map{
+            "error": "Nome e cognome sono obbligatori",
+            "code":  "MISSING_NAMES",
+        })
+    }// Controlla se l'utente esiste già nel database PostgreSQL
     var existingID int
     var checkQuery string
     var args []interface{}
@@ -103,8 +116,8 @@ func registerHandler(c *fiber.Ctx) error {
         })
     }    // Salva l'utente nel database PostgreSQL
     insertQuery := `
-        INSERT INTO users (email, username, password, role, created_at) 
-        VALUES ($1, $2, $3, $4, $5) 
+        INSERT INTO users (email, username, name, surname, password, role, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7) 
         RETURNING id, created_at`
 
     var userID int
@@ -135,7 +148,7 @@ func registerHandler(c *fiber.Ctx) error {
         finalUsername = req.Username
     }
     
-    err = database.DB.QueryRow(insertQuery, req.Email, finalUsername, string(hashedPassword), "user", time.Now()).
+    err = database.DB.QueryRow(insertQuery, req.Email, finalUsername, req.Name, req.Surname, string(hashedPassword), "user", time.Now()).
         Scan(&userID, &createdAt)
 
     if err != nil {
@@ -154,6 +167,8 @@ func registerHandler(c *fiber.Ctx) error {
             "id":         userID,
             "email":      req.Email,
             "username":   finalUsername,  // Restituisce l'username generato
+            "name":       req.Name,
+            "surname":    req.Surname,
             "created_at": createdAt,
         },
         "code": "REGISTER_SUCCESS",
@@ -167,7 +182,8 @@ type loginRequest struct {
     Password string `json:"password"`
 }
 
-func loginHandler(c *fiber.Ctx) error {    var req loginRequest
+func loginHandler(c *fiber.Ctx) error {
+    var req loginRequest
     if err := c.BodyParser(&req); err != nil {
         log.Printf("LOGIN_ERROR: Invalid payload - %v", err)
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -190,12 +206,11 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     }
 
     log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
-    
-    // Cerca l'utente nel database PostgreSQL
+      // Cerca l'utente nel database PostgreSQL
     var user User
-    selectQuery := `SELECT id, email, username, password, role, created_at FROM users WHERE email = $1 OR username = $1`
+    selectQuery := `SELECT id, email, username, name, surname, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
-        &user.ID, &user.Email, &user.Username, &user.Password, &user.Role, &user.CreatedAt)
+        &user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Password, &user.Role, &user.CreatedAt)
 
     if err == sql.ErrNoRows {
         log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
@@ -228,6 +243,8 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     claims["email"] = user.Email     // mantiene email per compatibilità
     claims["user_id"] = user.ID      // ID numerico dal database
     claims["role"] = user.Role       // ruolo utente per autorizzazione
+    claims["name"] = user.Name       // nome utente per QR attendance
+    claims["surname"] = user.Surname // cognome utente per QR attendance
     claims["identifier"] = identifier // campo esplicito per l'identificatore usato
     claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // scade dopo 24h
 
@@ -245,13 +262,14 @@ func loginHandler(c *fiber.Ctx) error {    var req loginRequest
     go models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true)
 
     return c.JSON(fiber.Map{
-        "token":        tokenString,
-        "access_token": tokenString, // Per compatibilità Flutter
+        "token":        tokenString,        "access_token": tokenString, // Per compatibilità Flutter
         "expires_in":   86400,       // 24 ore in secondi
         "user": fiber.Map{
             "id":       user.ID,
             "email":    user.Email,
             "username": user.Username,
+            "name":     user.Name,
+            "surname":  user.Surname,
             "role":     user.Role,
         },
     })
@@ -275,7 +293,7 @@ func adminOnly(c *fiber.Ctx) error {
 
 // getAllUsersHandler restituisce tutti gli utenti (solo admin)
 func getAllUsersHandler(c *fiber.Ctx) error {
-    query := `SELECT id, email, username, role, created_at FROM users ORDER BY created_at DESC`
+    query := `SELECT id, email, username, name, surname, role, created_at FROM users ORDER BY created_at DESC`
     rows, err := database.DB.Query(query)
     if err != nil {
         log.Printf("ADMIN_ERROR: Failed to query users - %v", err)
@@ -285,11 +303,10 @@ func getAllUsersHandler(c *fiber.Ctx) error {
         })
     }
     defer rows.Close()
-    
-    var users []User
+      var users []User
     for rows.Next() {
         var user User
-        err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.Role, &user.CreatedAt)
+        err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Role, &user.CreatedAt)
         if err != nil {
             log.Printf("ADMIN_ERROR: Failed to scan user - %v", err)
             continue

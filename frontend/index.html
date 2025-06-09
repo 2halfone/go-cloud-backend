@@ -34,12 +34,17 @@
 <body>
 
   <h1>Test Auth-Service / Gateway</h1>
-
   <!-- SEZIONE REGISTRAZIONE -->
   <h2>1. Registrazione</h2>
   <form id="register-form">
     <label for="reg-email">Email:</label>
     <input type="text" id="reg-email" required />
+
+    <label for="reg-name">Nome:</label>
+    <input type="text" id="reg-name" required />
+
+    <label for="reg-surname">Cognome:</label>
+    <input type="text" id="reg-surname" required />
 
     <label for="reg-password">Password:</label>
     <input type="password" id="reg-password" required />
@@ -68,23 +73,25 @@
 
   <script>
     // Memorizziamo il JWT in una variabile
-    let jwtToken = "";
-
-    // 1. Registrazione
+    let jwtToken = "";    // 1. Registrazione
     document.getElementById("register-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("reg-email").value.trim();
+      const name = document.getElementById("reg-name").value.trim();
+      const surname = document.getElementById("reg-surname").value.trim();
       const password = document.getElementById("reg-password").value.trim();
       const resultEl = document.getElementById("register-result");
 
-      if (!email || !password) {
-        resultEl.textContent = "Email e password sono obbligatori.";
+      if (!email || !name || !surname || !password) {
+        resultEl.textContent = "Tutti i campi sono obbligatori.";
         return;
-      }      try {
+      }
+
+      try {
         const res = await fetch("http://localhost:3000/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, name, surname, password }),
         });
         const data = await res.json();
         if (!res.ok) throw data;
