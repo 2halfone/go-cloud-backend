@@ -511,10 +511,14 @@ func main() {
     // app.Use(gatewayOnly)
     
     // Endpoint pubblici
-    app.Get("/health", healthHandler)
-
-    // JWT middleware per endpoint protetti
+    app.Get("/health", healthHandler)    // JWT middleware per endpoint protetti
     app.Use("/user", jwtware.New(jwtware.Config{
+        SigningKey:   jwtSecret,
+        ErrorHandler: jwtError,
+    }))
+    
+    // JWT middleware per endpoint QR (sia admin che user)
+    app.Use("/qr", jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
     }))
