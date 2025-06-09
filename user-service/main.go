@@ -857,7 +857,8 @@ func main() {
 
     // Endpoint per gestione utenti
     app.Get("/users", getUsersHandler)
-    app.Get("/users/:id", getUserByIDHandler)    app.Post("/users", createUserHandler)
+    app.Get("/users/:id", getUserByIDHandler)
+    app.Post("/users", createUserHandler)
     app.Put("/users/:id", updateUserHandler)
     app.Delete("/users/:id", deleteUserHandler)
     
