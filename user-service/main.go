@@ -331,27 +331,16 @@ func createAttendanceTable(eventID string) error {
     _, err := database.DB.Exec(createTableQuery)
     if err != nil {
         return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
-    }
-
-    // Use the new automated setup function from migration 0009
-    setupSQL := "SELECT setup_new_attendance_table($1)"
-    if _, err := database.DB.Exec(setupSQL, tableName); err != nil {
-        log.Printf("Warning: Failed to setup automated features for table %s: %v", tableName, err)
+    }    // DISABLED: Do not use automated setup that installs problematic triggers
+    // setupSQL := "SELECT setup_new_attendance_table($1)"
+    log.Printf("Skipping automated trigger setup to avoid auto-present issue for table %s", tableName)
+    
+    // Manual setup WITHOUT problematic triggers
+    log.Printf("Setting up table %s without auto-present triggers", tableName)
+      // Manual setup WITHOUT problematic triggers
+    log.Printf("Setting up table %s without auto-present triggers", tableName)
         
-        // Fallback to manual setup if automated function fails
-        log.Printf("Falling back to manual setup for table %s", tableName)
-        
-        // Manual trigger creation
-        triggerQuery := fmt.Sprintf(`
-            CREATE OR REPLACE TRIGGER tr_%s_auto_present 
-            BEFORE INSERT OR UPDATE ON %s
-            FOR EACH ROW EXECUTE FUNCTION auto_set_present_on_scan()`, tableName, tableName)
-        
-        if _, err := database.DB.Exec(triggerQuery); err != nil {
-            log.Printf("Warning: failed to create trigger for table %s: %v", tableName, err)
-        }
-        
-        // Manual index creation
+        // Manual index creation (keep the indexes, just skip the problematic trigger)
         indexQueries := []string{
             fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
             fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
@@ -370,9 +359,6 @@ func createAttendanceTable(eventID string) error {
         if err := populateEventUsers(tableName); err != nil {
             log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
         }
-    } else {
-        log.Printf("✅ Completed automated setup for table: %s", tableName)
-    }
 
     log.Printf("✅ Created attendance table: %s with enhanced status management", tableName)
     return nil
