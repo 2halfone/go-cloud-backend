@@ -930,14 +930,14 @@ func main() {
     app.Use("/qr", jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
-    }))
-      // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
+    }))    // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
     app.Use("/qr/admin", adminOnly)
     app.Post("/qr/admin/generate", generateQRHandler)
     app.Get("/qr/admin/events", getQRListHandler)
     app.Get("/qr/admin/events/:event_id/attendance", getEventAttendanceHandler)
     app.Get("/qr/admin/events/:event_id/users", getEventUsersHandler)
     app.Patch("/qr/admin/events/:event_id/users/:user_id/status", updateUserStatusHandler)
+    app.Delete("/qr/admin/events/:event_id", deleteEventHandler)
     
     // QR Attendance System - User endpoints (protetti da JWT)
     app.Post("/qr/scan", scanQRHandler)

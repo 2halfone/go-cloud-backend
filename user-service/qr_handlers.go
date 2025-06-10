@@ -769,6 +769,78 @@ func updateUserStatusHandler(c *fiber.Ctx) error {
     })
 }
 
+// Handler per cancellare un evento (admin only)
+func deleteEventHandler(c *fiber.Ctx) error {
+    eventID := c.Params("event_id")
+    if eventID == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Event ID is required",
+        })
+    }
+
+    // Verify admin role
+    adminID, _, _, role, err := getUserFromJWT(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Authentication error",
+        })
+    }
+
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Admin access required",
+        })
+    }
+
+    // Check if event exists
+    var eventExists bool
+    var eventName string
+    checkEventQuery := `SELECT EXISTS(SELECT 1 FROM attendance_events WHERE event_id = $1), 
+                       COALESCE((SELECT event_name FROM attendance_events WHERE event_id = $1), '')`
+    err = database.DB.QueryRow(checkEventQuery, eventID).Scan(&eventExists, &eventName)
+    if err != nil || !eventExists {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Event not found",
+        })
+    }
+
+    // Drop the dynamic attendance table
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    dropTableQuery := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName)
+    _, err = database.DB.Exec(dropTableQuery)
+    if err != nil {
+        log.Printf("Warning: Failed to drop table %s: %v", tableName, err)
+        // Continue with event deletion even if table drop fails
+    }
+
+    // Delete the event from attendance_events table
+    deleteEventQuery := `DELETE FROM attendance_events WHERE event_id = $1`
+    result, err := database.DB.Exec(deleteEventQuery, eventID)
+    if err != nil {
+        log.Printf("Error deleting event: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Error deleting event",
+        })
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+            "error": "Event not found",
+        })
+    }
+
+    log.Printf("ADMIN_ACTION: Admin %d deleted event %s (%s) and table %s", 
+        adminID, eventID, eventName, tableName)
+
+    return c.JSON(fiber.Map{
+        "message":    "Event deleted successfully",
+        "event_id":   eventID,
+        "event_name": eventName,
+        "deleted_by": adminID,
+    })
+}
+
 // Helper function: Calculate event statistics
 func calculateEventStats(users []map[string]interface{}) map[string]interface{} {
     stats := map[string]int{
