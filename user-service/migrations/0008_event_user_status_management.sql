@@ -24,6 +24,12 @@ BEGIN
     FOR table_record IN table_cursor LOOP
         table_name := table_record.tablename;
         
+        -- Add name column if it doesn't exist
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS name VARCHAR(255)', table_name);
+        
+        -- Add surname column if it doesn't exist
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS surname VARCHAR(255)', table_name);
+        
         -- Add updated_by column if it doesn't exist
         EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_by INTEGER REFERENCES users(id)', table_name);
         
@@ -58,8 +64,7 @@ SELECT update_attendance_tables_for_status_management();
 CREATE OR REPLACE FUNCTION populate_event_users(event_table_name TEXT)
 RETURNS VOID AS $$
 DECLARE
-    user_record RECORD;
-    user_cursor CURSOR FOR
+    user_record RECORD;    user_cursor CURSOR FOR
         SELECT id, name, last_name 
         FROM users 
         WHERE status = 'active';
@@ -67,7 +72,7 @@ BEGIN
     -- Insert all active users into the event table with default status
     FOR user_record IN user_cursor LOOP
         EXECUTE format(
-            'INSERT INTO %I (user_id, name, surname, status, timestamp, updated_at) 
+            'INSERT INTO %I (user_id, name, surname, status, scanned_at, updated_at) 
              VALUES ($1, $2, $3, $4, NULL, NOW()) 
              ON CONFLICT (user_id) DO NOTHING',
             event_table_name
@@ -86,8 +91,8 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION update_status_on_scan()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- When a record is inserted with a timestamp (QR scan), set status to present
-    IF NEW.timestamp IS NOT NULL AND (OLD.timestamp IS NULL OR OLD.timestamp != NEW.timestamp) THEN
+    -- When a record is inserted with a scanned_at timestamp (QR scan), set status to present
+    IF NEW.scanned_at IS NOT NULL AND (OLD.scanned_at IS NULL OR OLD.scanned_at != NEW.scanned_at) THEN
         NEW.status := 'present';
         NEW.updated_at := NOW();
     END IF;

@@ -46,16 +46,15 @@ RETURNS INTEGER AS $$
 DECLARE
     user_count INTEGER := 0;
     user_record RECORD;
-BEGIN
-    -- Insert all existing users into the event table with default status
+BEGIN    -- Insert all existing users into the event table with default status
     FOR user_record IN 
         SELECT id, name, last_name 
         FROM users 
-        WHERE role IN ('user', 'admin')
+        WHERE status = 'active'
     LOOP
         EXECUTE format(
-            'INSERT INTO %I (user_id, name, surname, status, updated_at) 
-             VALUES ($1, $2, $3, $4, NOW())
+            'INSERT INTO %I (user_id, name, surname, status, scanned_at, updated_at) 
+             VALUES ($1, $2, $3, $4, NULL, NOW())
              ON CONFLICT (user_id) DO NOTHING',
             event_table_name
         ) USING user_record.id, user_record.name, user_record.last_name, 'not_registered';

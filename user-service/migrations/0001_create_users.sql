@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   last_name TEXT NOT NULL,
+  username VARCHAR(255),
   status TEXT NOT NULL DEFAULT 'active',
-  timestamp TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
