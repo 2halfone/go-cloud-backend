@@ -215,12 +215,11 @@ func scanQRHandler(c *fiber.Ctx) error {
             "error": "Errore salvataggio presenza",
         })
     }
-      
-    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+        return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":     "QR scannerizzato con successo - scegli il tuo status",
         "event_id":    qrClaims.EventID,
         "event_name":  qrClaims.EventName,
-        "status":      "scanned", // Status is not set yet, waiting for user choice
+        "status":      "not_registered", // Status remains not_registered until user chooses
         "timestamp":   time.Now().Format(time.RFC3339),
         "table_name":  tableName,
         "next_step":   "Scegli se sei presente o assente e con quale motivazione",
