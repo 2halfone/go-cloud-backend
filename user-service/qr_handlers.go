@@ -207,14 +207,15 @@ func scanQRHandler(c *fiber.Ctx) error {
         })
     }
       // Registra presenza nella tabella dinamica dell'evento
-    tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
-    err = insertAttendanceRecord(tableName, userID, name, surname)
+    tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")    err = insertAttendanceRecord(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
-    }    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+    }
+      
+    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":     "QR scannerizzato con successo - scegli il tuo status",
         "event_id":    qrClaims.EventID,
         "event_name":  qrClaims.EventName,
