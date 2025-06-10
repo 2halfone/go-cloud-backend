@@ -204,10 +204,11 @@ func scanQRHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore sincronizzazione utente",
             "details": err.Error(),
-        })
-    }
-      // Registra presenza nella tabella dinamica dell'evento
-    tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")    err = insertAttendanceRecord(tableName, userID, name, surname)
+        })    }
+      
+    // Registra presenza nella tabella dinamica dell'evento
+    tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
+    err = insertAttendanceRecord(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
