@@ -3,7 +3,7 @@
 ## Overview
 This document describes the database configuration and structure for the authentication service in the Go microservices backend.
 
-## Database Configuration
+## Database Configuration,
 
 ### Connection Details
 - **Database Type**: PostgreSQL 15 (Alpine)

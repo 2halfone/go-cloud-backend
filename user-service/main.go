@@ -469,19 +469,18 @@ func insertAttendanceRecord(tableName string, userID int, userName, userSurname 
             return fmt.Errorf("failed to insert attendance record: %v", err)
         }
         
-        log.Printf("✅ Inserted new attendance record for user %d (trigger will set to present)", userID)
-    } else if err == nil {
-        // User exists, update scanned_at (trigger will auto-set status to 'present')
+        log.Printf("✅ Inserted new attendance record for user %d (trigger will set to present)", userID)    } else if err == nil {
+        // User exists, update only scanned_at timestamp (don't set status yet)
         updateSQL := fmt.Sprintf(`
             UPDATE %s 
-            SET scanned_at = NOW(), status = 'present', updated_at = NOW()
+            SET scanned_at = NOW(), updated_at = NOW()
             WHERE user_id = $1`, tableName)
         
         if _, err := database.DB.Exec(updateSQL, userID); err != nil {
             return fmt.Errorf("failed to update attendance record: %v", err)
         }
         
-        log.Printf("✅ Updated scan time for user %d (status set to present)", userID)
+        log.Printf("✅ Updated scan time for user %d (status not set yet, waiting for user choice)", userID)
     } else {
         return fmt.Errorf("failed to check existing attendance: %v", err)
     }
