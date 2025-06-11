@@ -16,7 +16,7 @@ import (
 
 func main() {
     // Inizializza Prometheus registry
-    metrics.InitPrometheusMetrics()
+    // metrics.InitPrometheusMetrics() // Commented out to fix duplicate registration error
     
     app := fiber.New(fiber.Config{
         Prefork:      false,
