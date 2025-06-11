@@ -206,13 +206,11 @@ func CreateAttendanceTable(eventID string) error {
 	_, err := database.DB.Exec(createTableQuery)
 	if err != nil {
 		return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
-	}
-	// DISABLED: Use the new automated setup function from migration 0009
+	}	// DISABLED: Use the new automated setup function from migration 0009
 	// setupSQL := "SELECT setup_new_attendance_table($1)"
 	log.Printf("Skipping automated trigger setup to avoid auto-present issue for table %s", tableName)
 	
 	// Manual setup WITHOUT problematic triggers
-	log.Printf("Setting up table %s without auto-present triggers", tableName)	// Manual setup WITHOUT problematic triggers
 	log.Printf("Setting up table %s without auto-present triggers", tableName)
 
 	// Manual index creation (keep the indexes, just skip the problematic trigger)

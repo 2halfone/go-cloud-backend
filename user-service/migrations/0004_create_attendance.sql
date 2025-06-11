@@ -1,35 +1,33 @@
 -- user-service/migrations/0004_create_attendance.sql
--- NOTA: Questa migrazione è DISABILITATA
--- Il sistema usa tabelle dinamiche, non la tabella statica 'attendance'
--- Le tabelle dinamiche sono gestite dalle migrazioni 0008 e 0009
+-- NOTA: Questa migrazione è COMPLETAMENTE DISABILITATA
+-- Il sistema usa SOLO tabelle dinamiche, non la tabella statica 'attendance'
+-- Le tabelle dinamiche sono gestite dalle migrazioni 0008, 0009, 0010, e 0011
 
 -- ============================================================================
--- QUESTA MIGRAZIONE NON È PIÙ ATTIVA
+-- QUESTA MIGRAZIONE NON È ATTIVA - NON CREA NULLA
 -- ============================================================================
 
 -- Questa migrazione originariamente creava una tabella statica 'attendance'
--- ma il sistema attuale usa tabelle dinamiche con nome: attendance_EVENTNAME_DATE
+-- ma il sistema attuale usa SOLO tabelle dinamiche con nome: attendance_EVENTNAME_DATE
 -- 
--- Struttura delle tabelle dinamiche:
+-- Esempi di tabelle dinamiche:
 -- - attendance_poiu_2025_06_11
 -- - attendance_daily_attendanc_2025_06_10
--- etc.
+-- - attendance_event_name_YYYY_MM_DD
 --
 -- La struttura è definita in:
 -- - user-service/services/qr_service.go -> CreateAttendanceTable()
--- - Migrazioni 0008 e 0009 per triggers e automation
+-- - Migrazioni 0008, 0009, 0010, 0011 per triggers, automation, e fix
 --
 -- Status values usati: 'not_registered', 'present', 'hospital', 'family', 
 --                      'emergency', 'personal', 'vacancy'
 
--- Questo file è mantenuto per riferimento storico ma non crea più tabelle
-
 -- ============================================================================
--- LEGACY CODE (DISABILITATO)
+-- MIGRATION STATUS: DISABLED - NO-OP
 -- ============================================================================
 
--- CREATE TABLE IF NOT EXISTS attendance (
---     ...tabella non più usata...
--- );
+-- Questa migrazione non fa NULLA perché la tabella statica attendance non è usata
+-- Il sistema crea automaticamente tabelle dinamiche per ogni evento
 
-SELECT 'Migration 0004: DISABLED - System uses dynamic tables instead of static attendance table' as notice;
+-- Verifica che la migrazione sia disabilitata
+SELECT 'Migration 0004: DISABLED - System uses ONLY dynamic tables (attendance_EVENTNAME_DATE)' as notice;
