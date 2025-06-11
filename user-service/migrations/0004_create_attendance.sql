@@ -1,32 +1,35 @@
 -- user-service/migrations/0004_create_attendance.sql
--- Tabella per registrare le presenze degli utenti
+-- NOTA: Questa migrazione è DISABILITATA
+-- Il sistema usa tabelle dinamiche, non la tabella statica 'attendance'
+-- Le tabelle dinamiche sono gestite dalle migrazioni 0008 e 0009
 
-CREATE TABLE IF NOT EXISTS attendance (
-    id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(id),
-    event_id VARCHAR(100) NOT NULL,                 -- riferimento a attendance_events.event_id
-    timestamp TIMESTAMP DEFAULT NOW(),              -- momento della scansione
-    name VARCHAR(100) NOT NULL,                     -- nome utente (denormalizzato)
-    surname VARCHAR(100) NOT NULL,                  -- cognome utente (denormalizzato)
-    status VARCHAR(20) NOT NULL CHECK (status IN (
-        'presente',     -- Presente
-        'vacation',     -- Ferie
-        'hospital',     -- Malattia/Ospedale
-        'family',       -- Motivi familiari
-        'sick',         -- Malattia
-        'personal',     -- Motivi personali  
-        'business',     -- Trasferta/Business
-        'other'         -- Altro motivo
-    )),
-    motivazione TEXT,                               -- dettagli aggiuntivi (opzionale)
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    -- Un utente può registrare presenza una sola volta per evento
-    UNIQUE(user_id, event_id)
-);
+-- ============================================================================
+-- QUESTA MIGRAZIONE NON È PIÙ ATTIVA
+-- ============================================================================
 
--- Indici per performance
-CREATE INDEX idx_attendance_user_id ON attendance(user_id);
-CREATE INDEX idx_attendance_event_id ON attendance(event_id);
-CREATE INDEX idx_attendance_status ON attendance(status);
-CREATE INDEX idx_attendance_timestamp ON attendance(timestamp);
+-- Questa migrazione originariamente creava una tabella statica 'attendance'
+-- ma il sistema attuale usa tabelle dinamiche con nome: attendance_EVENTNAME_DATE
+-- 
+-- Struttura delle tabelle dinamiche:
+-- - attendance_poiu_2025_06_11
+-- - attendance_daily_attendanc_2025_06_10
+-- etc.
+--
+-- La struttura è definita in:
+-- - user-service/services/qr_service.go -> CreateAttendanceTable()
+-- - Migrazioni 0008 e 0009 per triggers e automation
+--
+-- Status values usati: 'not_registered', 'present', 'hospital', 'family', 
+--                      'emergency', 'personal', 'vacancy'
+
+-- Questo file è mantenuto per riferimento storico ma non crea più tabelle
+
+-- ============================================================================
+-- LEGACY CODE (DISABILITATO)
+-- ============================================================================
+
+-- CREATE TABLE IF NOT EXISTS attendance (
+--     ...tabella non più usata...
+-- );
+
+SELECT 'Migration 0004: DISABLED - System uses dynamic tables instead of static attendance table' as notice;

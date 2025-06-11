@@ -437,7 +437,7 @@ func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
     return count > 0, nil
 }
 
-// Insert or update attendance record for QR scan (trigger auto-sets status to 'present')
+// Insert or update attendance record for QR scan - FIXED to properly update scanned_at
 func insertAttendanceRecord(tableName string, userID int, userName, userSurname string) error {
     // Check if user already exists in this event
     checkSQL := fmt.Sprintf("SELECT id FROM %s WHERE user_id = $1", tableName)
@@ -445,8 +445,7 @@ func insertAttendanceRecord(tableName string, userID int, userName, userSurname 
     err := database.DB.QueryRow(checkSQL, userID).Scan(&existingID)
     
     if err == sql.ErrNoRows {
-        // User doesn't exist, insert new record
-        // The trigger will automatically set status to 'present' and scanned_at
+        // User doesn't exist, insert new record with scanned_at timestamp
         insertSQL := fmt.Sprintf(`
             INSERT INTO %s (user_id, name, surname, scanned_at, status, updated_at) 
             VALUES ($1, $2, $3, NOW(), 'not_registered', NOW())`, tableName)
@@ -455,7 +454,7 @@ func insertAttendanceRecord(tableName string, userID int, userName, userSurname 
             return fmt.Errorf("failed to insert attendance record: %v", err)
         }
         
-        log.Printf("✅ Inserted new attendance record for user %d (trigger will set to present)", userID)    } else if err == nil {
+        log.Printf("✅ Inserted new attendance record for user %d with scanned_at timestamp", userID)    } else if err == nil {
         // User exists, update only scanned_at timestamp (don't set status yet)
         updateSQL := fmt.Sprintf(`
             UPDATE %s 
@@ -466,7 +465,7 @@ func insertAttendanceRecord(tableName string, userID int, userName, userSurname 
             return fmt.Errorf("failed to update attendance record: %v", err)
         }
         
-        log.Printf("✅ Updated scan time for user %d (status not set yet, waiting for user choice)", userID)
+        log.Printf("✅ Updated scanned_at timestamp for user %d (status remains unchanged for manual admin setting)", userID)
     } else {
         return fmt.Errorf("failed to check existing attendance: %v", err)
     }
