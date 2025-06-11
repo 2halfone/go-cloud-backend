@@ -91,6 +91,26 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
+      retries: 3  # --- Prometheus Monitoring Service ---
+  prometheus-service:
+    build:
+      context: ./monitoring/prometheus-service
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    environment:
+      - PROMETHEUS_PORT=9090
+    networks:
+      - microservices-net
+    depends_on:
+      - auth-service
+      - user-service
+      - gateway
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
       retries: 3
 
   nginx:

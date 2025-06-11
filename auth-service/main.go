@@ -16,6 +16,8 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "golang.org/x/crypto/bcrypt"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -551,15 +553,20 @@ func main() {
     }))
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
-    // app.Use(gatewayOnly)
-
-    // Health endpoint (pubblico)
+    // app.Use(gatewayOnly)    // Health endpoint (pubblico)
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
             "status":    "healthy",
             "service":   "auth-service",
             "timestamp": time.Now(),
         })
+    })
+
+    // Prometheus metrics endpoint
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
+        handler(c.Context())
+        return nil
     })
 
     // Endpoint per registrare un nuovo utente

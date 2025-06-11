@@ -16,6 +16,8 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
 )
 
@@ -902,9 +904,17 @@ func main() {
         MaxAge:           300, // 5 minuti
     }))    // Middleware per bloccare accessi diretti (opzionale in sviluppo)
     // app.Use(gatewayOnly)
-    
-    // Endpoint pubblici
-    app.Get("/health", healthHandler)    // JWT middleware per endpoint protetti
+      // Endpoint pubblici
+    app.Get("/health", healthHandler)
+
+    // Prometheus metrics endpoint
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
+        handler(c.Context())
+        return nil
+    })
+
+    // JWT middleware per endpoint protetti
     app.Use("/user", jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,

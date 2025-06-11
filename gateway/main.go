@@ -17,6 +17,8 @@ import (
     "github.com/gofiber/fiber/v2/middleware/recover"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
+    "github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -274,9 +276,7 @@ func main() {
         
         log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
-    })
-
-    // Health checks pubblici
+    })    // Health checks pubblici
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
             "status":    "healthy",
@@ -284,6 +284,13 @@ func main() {
             "timestamp": time.Now().Format(time.RFC3339),
             "version":   "1.0.0",
         })
+    })
+
+    // Prometheus metrics endpoint
+    app.Get("/metrics", func(c *fiber.Ctx) error {
+        handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
+        handler(c.Context())
+        return nil
     })
 
     // Internal health check endpoint for debugging service connectivity
