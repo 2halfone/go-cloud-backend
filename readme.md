@@ -1,5 +1,5 @@
 
-Schema dell'Applicazione Go Cloud Backend
+Schema dell'Applicazione Go Cloud Backend.
 
 graph TB
     %% Client Layer
