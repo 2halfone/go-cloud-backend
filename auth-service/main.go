@@ -8,6 +8,7 @@ import (
     "log"
     "net/mail"
     "os"
+    "strconv"
     "strings"
     "time"
 
@@ -16,12 +17,121 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "golang.org/x/crypto/bcrypt"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
+
+// Prometheus metrics
+var (
+    // HTTP Metrics
+    httpRequestsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status_code", "service"},
+    )
+
+    httpRequestDuration = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds",
+            Help:    "Duration of HTTP requests in seconds",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "endpoint", "service"},
+    )
+
+    // Authentication Metrics
+    authAttemptsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "auth_attempts_total",
+            Help: "Total number of authentication attempts",
+        },
+        []string{"status", "service"},
+    )
+
+    // Active Users
+    activeUsers = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "active_users_total",
+            Help: "Number of active users",
+        },
+        []string{"service"},
+    )
+
+    // Database Connections
+    databaseConnections = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "database_connections_active",
+            Help: "Number of active database connections",
+        },
+        []string{"service", "database"},
+    )
+
+    // System Errors
+    systemErrorsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "system_errors_total",
+            Help: "Total number of system errors",
+        },
+        []string{"service", "error_type"},
+    )
+)
+
+// Metrics middleware for HTTP requests
+func metricsMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        start := time.Now()
+
+        // Process the request
+        err := c.Next()
+
+        duration := time.Since(start)
+        statusCode := strconv.Itoa(c.Response().StatusCode())
+
+        // Record metrics
+        httpRequestsTotal.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            statusCode,
+            "auth-service",
+        ).Inc()
+
+        httpRequestDuration.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            "auth-service",
+        ).Observe(duration.Seconds())
+
+        return err
+    }
+}
+
+// Update active users count
+func updateActiveUsersCount() {
+    db := database.DB
+    if db != nil {
+        var count int
+        query := `SELECT COUNT(*) FROM users WHERE last_login >= NOW() - INTERVAL '30 minutes'`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
+            activeUsers.WithLabelValues("auth-service").Set(float64(count))
+        }
+    }
+}
+
+// Update database connections count
+func updateDatabaseConnections() {
+    db := database.DB
+    if db != nil {
+        stats := db.Stats()
+        databaseConnections.WithLabelValues("auth-service", "auth_db").Set(float64(stats.OpenConnections))
+    }
+}
 
 // User rappresenta un utente registrato nel database PostgreSQL
 type User struct {
@@ -149,8 +259,7 @@ func registerHandler(c *fiber.Ctx) error {
     } else {
         finalUsername = req.Username
     }
-    
-    err = database.DB.QueryRow(insertQuery, req.Email, finalUsername, req.Name, req.Surname, string(hashedPassword), "user", time.Now()).
+      err = database.DB.QueryRow(insertQuery, req.Email, finalUsername, req.Name, req.Surname, string(hashedPassword), "user", time.Now()).
         Scan(&userID, &createdAt)
 
     if err != nil {
@@ -160,8 +269,11 @@ func registerHandler(c *fiber.Ctx) error {
             "code":  "DATABASE_ERROR",
         })
     }
-
+    
     log.Printf("REGISTER_SUCCESS: user_id=%d, email=%s, username=%s", userID, req.Email, finalUsername)
+    
+    // Record successful registration metric
+    authAttemptsTotal.WithLabelValues("register_success", "auth-service").Inc()
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message": "Registrazione avvenuta con successo",
@@ -213,17 +325,21 @@ func loginHandler(c *fiber.Ctx) error {
     selectQuery := `SELECT id, email, username, name, surname, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
         &user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Password, &user.Role, &user.CreatedAt)
-
+    
     if err == sql.ErrNoRows {
         log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
         // Log failed login attempt
         go models.LogAuthActionDetailed(identifier, "", "login_failed_user_not_found", c.IP(), c.Get("User-Agent"), false)
+        // Record failed login metric
+        authAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
     } else if err != nil {
         log.Printf("LOGIN_ERROR: Database query failed - %v", err)
+        // Record system error metric
+        systemErrorsTotal.WithLabelValues("auth-service", "database_error").Inc()
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore interno del server",
             "code":  "DATABASE_ERROR",
@@ -235,11 +351,13 @@ func loginHandler(c *fiber.Ctx) error {
         log.Printf("LOGIN_FAILED: Invalid password for identifier '%s'", identifier)
         // Log failed login attempt with wrong password
         go models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false)
+        // Record failed login metric
+        authAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
-    }    // Genera JWT
+    }// Genera JWT
     token := jwt.New(jwt.SigningMethodHS256)
     claims := token.Claims.(jwt.MapClaims)
     claims["email"] = user.Email     // mantiene email per compatibilità
@@ -256,12 +374,16 @@ func loginHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Impossibile generare il token",
             "code":  "JWT_ERROR",
-        })    }
-
+        })
+    }
+    
     log.Printf("LOGIN_SUCCESS: user_id=%d, email=%s", user.ID, user.Email)
     
     // Log the successful authentication with details
     go models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true)
+    
+    // Record successful login metric
+    authAttemptsTotal.WithLabelValues("success", "auth-service").Inc()
 
     return c.JSON(fiber.Map{
         "token":        tokenString,        "access_token": tokenString, // Per compatibilità Flutter
@@ -542,8 +664,12 @@ func main() {
 
     // Connetti al database
     database.Connect()
-    
-    app := fiber.New()    // CORS per Flutter - configurazione sicura per sviluppo
+      app := fiber.New()
+
+    // Add metrics middleware to track HTTP requests
+    app.Use(metricsMiddleware())
+
+    // CORS per Flutter - configurazione sicura per sviluppo
     app.Use(cors.New(cors.Config{
         AllowOrigins:     "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://10.0.2.2:3000", // Origins specifici invece di wildcard
         AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
@@ -551,6 +677,15 @@ func main() {
         AllowCredentials: true,
         MaxAge:           300, // 5 minuti
     }))
+
+    // Start periodic metrics updates
+    go func() {
+        for {
+            time.Sleep(30 * time.Second)
+            updateActiveUsersCount()
+            updateDatabaseConnections()
+        }
+    }()
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
     // app.Use(gatewayOnly)    // Health endpoint (pubblico)

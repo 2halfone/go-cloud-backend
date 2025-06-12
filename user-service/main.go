@@ -16,6 +16,8 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
@@ -26,6 +28,147 @@ var jwtSecret []byte
 
 // Auth service database connection
 var authDB *sql.DB
+
+// Prometheus metrics
+var (
+    // HTTP Metrics
+    httpRequestsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status_code", "service"},
+    )
+
+    httpRequestDuration = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds",
+            Help:    "Duration of HTTP requests in seconds",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "endpoint", "service"},
+    )
+
+    // QR Code Metrics
+    qrScansTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "qr_scans_total",
+            Help: "Total number of QR code scans",
+        },
+        []string{"event_id", "status", "service"},
+    )
+
+    qrEventsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "qr_events_total",
+            Help: "Total number of QR events created",
+        },
+        []string{"service"},
+    )
+
+    // Active Users
+    activeUsers = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "active_users_total",
+            Help: "Number of active users",
+        },
+        []string{"service"},
+    )
+
+    // Database Connections
+    databaseConnections = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "database_connections_active",
+            Help: "Number of active database connections",
+        },
+        []string{"service", "database"},
+    )
+
+    // System Errors
+    systemErrorsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "system_errors_total",
+            Help: "Total number of system errors",
+        },
+        []string{"service", "error_type"},
+    )
+
+    // Attendance Events
+    attendanceEventsTotal = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "attendance_events_active",
+            Help: "Number of active attendance events",
+        },
+        []string{"service"},
+    )
+)
+
+// Metrics middleware for HTTP requests
+func metricsMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        start := time.Now()
+
+        // Process the request
+        err := c.Next()
+
+        duration := time.Since(start)
+        statusCode := strconv.Itoa(c.Response().StatusCode())
+
+        // Record metrics
+        httpRequestsTotal.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            statusCode,
+            "user-service",
+        ).Inc()
+
+        httpRequestDuration.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            "user-service",
+        ).Observe(duration.Seconds())
+
+        return err
+    }
+}
+
+// Update active users count
+func updateActiveUsersCount() {
+    db := database.DB
+    if db != nil {
+        var count int
+        query := `SELECT COUNT(*) FROM users WHERE status = 'active'`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
+            activeUsers.WithLabelValues("user-service").Set(float64(count))
+        }
+    }
+}
+
+// Update database connections count
+func updateDatabaseConnections() {
+    db := database.DB
+    if db != nil {
+        stats := db.Stats()
+        databaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
+    }
+    
+    if authDB != nil {
+        stats := authDB.Stats()
+        databaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
+    }
+}
+
+// Update attendance events count
+func updateAttendanceEventsCount() {
+    db := database.DB
+    if db != nil {
+        var count int
+        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
+            attendanceEventsTotal.WithLabelValues("user-service").Set(float64(count))
+        }
+    }
+}
 
 // User rappresenta un utente nella tabella users
 type User struct {
@@ -895,6 +1038,9 @@ func main() {
         AppName: "User Service v1.0",
     })
 
+    // Add metrics middleware to track HTTP requests
+    app.Use(metricsMiddleware())
+
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{
         AllowOrigins:     "http://localhost:3000", // Solo dal Gateway
@@ -902,7 +1048,19 @@ func main() {
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For,X-Gateway-Request",
         AllowCredentials: true,
         MaxAge:           300, // 5 minuti
-    }))    // Middleware per bloccare accessi diretti (opzionale in sviluppo)
+    }))
+
+    // Start periodic metrics updates
+    go func() {
+        for {
+            time.Sleep(30 * time.Second)
+            updateActiveUsersCount()
+            updateDatabaseConnections()
+            updateAttendanceEventsCount()
+        }
+    }()
+
+    // Middleware per bloccare accessi diretti (opzionale in sviluppo)
     // app.Use(gatewayOnly)
       // Endpoint pubblici
     app.Get("/health", healthHandler)

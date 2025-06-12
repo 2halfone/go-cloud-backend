@@ -6,6 +6,7 @@ import (
     "log"
     "net/http"
     "os"
+    "strconv"
     "strings"
     "time"
 
@@ -17,12 +18,108 @@ import (
     "github.com/gofiber/fiber/v2/middleware/recover"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
+
+// Prometheus metrics
+var (
+    // HTTP Metrics
+    httpRequestsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status_code", "service"},
+    )
+
+    httpRequestDuration = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds",
+            Help:    "Duration of HTTP requests in seconds",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "endpoint", "service"},
+    )
+
+    // Gateway-specific metrics
+    proxyRequestsTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_proxy_requests_total",
+            Help: "Total number of proxy requests through gateway",
+        },
+        []string{"target_service", "status_code"},
+    )
+
+    activeConnectionsGauge = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "gateway_active_connections",
+            Help: "Number of active connections to gateway",
+        },
+        []string{"service"},
+    )
+
+    // JWT Authentication metrics
+    jwtValidationTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "jwt_validation_total",
+            Help: "Total number of JWT validations",
+        },
+        []string{"status", "service"},
+    )
+)
+
+// Metrics middleware for HTTP requests
+func metricsMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        start := time.Now()
+
+        // Process the request
+        err := c.Next()
+
+        duration := time.Since(start)
+        statusCode := strconv.Itoa(c.Response().StatusCode())
+
+        // Record metrics
+        httpRequestsTotal.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            statusCode,
+            "gateway",
+        ).Inc()
+
+        httpRequestDuration.WithLabelValues(
+            c.Method(),
+            c.Path(),
+            "gateway",
+        ).Observe(duration.Seconds())
+
+        // Record proxy metrics based on path
+        targetService := getTargetService(c.Path())
+        if targetService != "gateway" {
+            proxyRequestsTotal.WithLabelValues(targetService, statusCode).Inc()
+        }
+
+        return err
+    }
+}
+
+// Helper function to determine target service from path
+func getTargetService(path string) string {
+    if strings.HasPrefix(path, "/auth/") {
+        return "auth-service"
+    } else if strings.HasPrefix(path, "/user/") {
+        return "user-service"
+    } else if strings.HasPrefix(path, "/admin/") {
+        return "auth-service"
+    }
+    return "gateway"
+}
 
 // LogEntry rappresenta una voce di log strutturata
 type LogEntry struct {
@@ -579,6 +676,9 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
 func jwtError(c *fiber.Ctx, err error) error {
     log.Printf("JWT_AUTH_FAILED: %s - Path: %s - Method: %s - IP: %s - UserAgent: %s", 
         err.Error(), c.Path(), c.Method(), c.IP(), c.Get("User-Agent"))
+    
+    // Record failed JWT validation metric
+    jwtValidationTotal.WithLabelValues("failed", "gateway").Inc()
     
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error":       "Authentication failed",

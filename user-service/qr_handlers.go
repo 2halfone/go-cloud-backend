@@ -112,8 +112,7 @@ func generateQRHandler(c *fiber.Ctx) error {
             "error": "Errore salvataggio evento",
         })
     }
-    
-    log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
+      log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
     
     // Create dynamic attendance table for this event
     err = createAttendanceTable(eventID)
@@ -121,6 +120,9 @@ func generateQRHandler(c *fiber.Ctx) error {
         log.Printf("generateQRHandler: Warning - failed to create attendance table: %v", err)
         // Don't fail the request, just log the warning
     }
+    
+    // Record QR event creation metric
+    qrEventsTotal.WithLabelValues("user-service").Inc()
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":         "QR generato con successo",
@@ -205,17 +207,23 @@ func scanQRHandler(c *fiber.Ctx) error {
             "error": "Errore sincronizzazione utente",
             "details": err.Error(),
         })    }
-      
-    // Registra presenza nella tabella dinamica dell'evento
+        // Registra presenza nella tabella dinamica dell'evento
     tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
     err = insertAttendanceRecord(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
+        // Record failed QR scan metric
+        qrScansTotal.WithLabelValues(qrClaims.EventID, "failed", "user-service").Inc()
+        systemErrorsTotal.WithLabelValues("user-service", "database_error").Inc()
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
     }
-        return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+    
+    // Record successful QR scan metric
+    qrScansTotal.WithLabelValues(qrClaims.EventID, "success", "user-service").Inc()
+
+    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":     "QR scannerizzato con successo - scegli il tuo status",
         "event_id":    qrClaims.EventID,
         "event_name":  qrClaims.EventName,
