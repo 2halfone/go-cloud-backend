@@ -588,16 +588,6 @@ app.Get("/user/qr/admin/events/:event_id/users", adminOnly, func(c *fiber.Ctx) e
     return proxy.Do(c, target)
 })
 
-app.Patch("/user/qr/admin/events/:event_id/users/:user_id/status", adminOnly, func(c *fiber.Ctx) error {
-    eventID := c.Params("event_id")
-    userID := c.Params("user_id")
-    target := fmt.Sprintf("http://user-service:3002/qr/admin/events/%s/users/%s/status", eventID, userID)
-    c.Set("X-Gateway-Request", "gateway-v1.0")
-    log.Printf("QR_UPDATE_STATUS_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-    return proxy.Do(c, target)
-})
-
 // -------------------------------------------------------
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------

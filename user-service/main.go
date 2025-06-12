@@ -1109,7 +1109,6 @@ func main() {
     app.Get("/qr/admin/events", getQRListHandler)
     app.Get("/qr/admin/events/:event_id/attendance", getEventAttendanceHandler)
     app.Get("/qr/admin/events/:event_id/users", getEventUsersHandler)
-    app.Patch("/qr/admin/events/:event_id/users/:user_id/status", updateUserStatusHandler)
     app.Delete("/qr/admin/events/:event_id", deleteEventHandler)
     
     // QR Attendance System - User endpoints (protetti da JWT)

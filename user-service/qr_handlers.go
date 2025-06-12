@@ -5,7 +5,6 @@ import (
     "encoding/json"
     "fmt"
     "log"
-    "strconv"
     "strings"
     "time"
     "user-service/database"
@@ -663,118 +662,6 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         "users":       users,
         "total_users": len(users),
         "statistics":  stats,
-    })
-}
-
-// NEW: Handler per aggiornare status di un utente specifico (admin only)
-func updateUserStatusHandler(c *fiber.Ctx) error {
-    eventID := c.Params("event_id")
-    userIDParam := c.Params("user_id")
-    
-    if eventID == "" || userIDParam == "" {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Event ID and User ID are required",
-        })
-    }
-    
-    // Parse user ID
-    userID, err := strconv.Atoi(userIDParam)
-    if err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Invalid user ID",
-        })
-    }
-    
-    // Verify admin role and get admin ID
-    adminID, _, _, role, err := getUserFromJWT(c)
-    if err != nil {
-        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-            "error": "Authentication error",
-        })
-    }
-    
-    if role != "admin" {
-        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-            "error": "Admin access required",
-        })
-    }
-    
-    // Parse request body
-    var req struct {
-        Status string `json:"status"`
-    }
-    if err := c.BodyParser(&req); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Invalid request body",
-        })
-    }
-    
-    // Validate status
-    if !isValidStatus(req.Status) {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Invalid status",
-            "valid_statuses": ValidStatuses,
-        })
-    }
-    
-    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
-    
-    // Check if table exists
-    var tableExists bool
-    checkTableQuery := `
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = $1
-        )`
-    err = database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
-    if err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Database error",
-        })
-    }
-    
-    if !tableExists {
-        return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-            "error": "Event not found",
-        })
-    }
-    
-    // Update user status
-    updateQuery := fmt.Sprintf(`
-        UPDATE %s 
-        SET status = $1, updated_by = $2, updated_at = NOW()
-        WHERE user_id = $3
-        RETURNING name, surname, status, updated_at
-    `, tableName)
-    
-    var name, surname, status string
-    var updatedAt time.Time
-    err = database.DB.QueryRow(updateQuery, req.Status, adminID, userID).Scan(&name, &surname, &status, &updatedAt)
-    if err != nil {
-        if err == sql.ErrNoRows {
-            return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-                "error": "User not found in this event",
-            })
-        }
-        log.Printf("Error updating user status: %v", err)
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Error updating user status",
-        })
-    }
-    
-    log.Printf("ADMIN_ACTION: Admin %d updated user %d status to '%s' in event %s", 
-        adminID, userID, req.Status, eventID)
-    
-    return c.JSON(fiber.Map{
-        "message":    "User status updated successfully",
-        "event_id":   eventID,
-        "user_id":    userID,
-        "name":       name,
-        "surname":    surname,
-        "status":     status,
-        "updated_at": updatedAt.Format(time.RFC3339),
-        "updated_by": adminID,
     })
 }
 
