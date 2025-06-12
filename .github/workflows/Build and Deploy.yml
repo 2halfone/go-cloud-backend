@@ -266,16 +266,64 @@ jobs:
           echo "🎯 Checking Prometheus targets..."
           sleep 5
           curl -s http://localhost:9090/api/v1/targets | grep -o '"health":"[^"]*"' | sort | uniq -c || echo "Targets still initializing..."
-          
-          # Check if prometheus container is running
+            # Check if prometheus container is running
           docker-compose -f docker-compose.prod.yml ps prometheus-service
           echo "✅ Prometheus Monitoring deployed successfully!"
         ENDSSH
-  # Job 7: Deploy Nginx (reverse proxy)
+
+  # Job 7: Deploy Dashboard API
+  deploy-dashboard-api:
+    name: 📈 Deploy Dashboard API
+    runs-on: ubuntu-latest
+    needs: deploy-prometheus
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Build and Deploy Dashboard API
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "📈 Building Dashboard API..."
+          docker-compose -f docker-compose.prod.yml build --no-cache dashboard-api
+          
+          echo "🚀 Starting Dashboard API..."
+          docker-compose -f docker-compose.prod.yml up -d dashboard-api
+          
+          echo "⏳ Waiting for dashboard-api to be ready..."
+          sleep 20
+          
+          # Health check for Dashboard API
+          for i in {1..5}; do
+            if curl -f http://localhost:3003/health; then
+              echo "✅ Dashboard API is healthy!"
+              break
+            fi
+            echo "⏳ Attempt $i/5 - waiting for dashboard-api..."
+            sleep 10
+          done
+          
+          # Test Dashboard API endpoint
+          echo "📊 Testing Dashboard API personal endpoint..."
+          curl -s http://localhost:3003/api/dashboard/personal | head -n 3 || echo "Dashboard API initializing..."
+          
+          # Check if dashboard-api container is running
+          docker-compose -f docker-compose.prod.yml ps dashboard-api
+          echo "✅ Dashboard API deployed successfully!"
+        ENDSSH
+
+  # Job 8: Deploy Nginx (reverse proxy)
   deploy-nginx:
     name: 🔄 Deploy Nginx Proxy
     runs-on: ubuntu-latest
-    needs: [deploy-gateway, deploy-prometheus]
+    needs: [deploy-gateway, deploy-prometheus, deploy-dashboard-api]
     
     steps:
     - name: Setup SSH Key
@@ -300,8 +348,7 @@ jobs:
           # Check nginx status
           docker-compose -f docker-compose.prod.yml ps nginx
           echo "✅ Nginx deployed successfully!"
-        ENDSSH
-  # Job 8: Verifica finale del deployment
+        ENDSSH  # Job 9: Verifica finale del deployment
   verify-deployment:
     name: ✅ Verify Deployment
     runs-on: ubuntu-latest
@@ -336,9 +383,11 @@ jobs:
           curl -f http://localhost:3001/health
             echo "👤 Testing User Service health..."
           curl -f http://localhost:3002/health
-          
-          echo "📊 Testing Prometheus monitoring..."
+            echo "📊 Testing Prometheus monitoring..."
           curl -f http://localhost:9090/-/ready
+          
+          echo "📈 Testing Dashboard API..."
+          curl -f http://localhost:3003/health
           
           echo ""
           echo "🎉 ===== DEPLOYMENT COMPLETED SUCCESSFULLY ====="
@@ -348,6 +397,7 @@ jobs:
           echo "👤 User Service: Running ✅"
           echo "🌐 Gateway: Running ✅"
           echo "📊 Prometheus: Running ✅"
+          echo "📈 Dashboard API: Running ✅"
           echo "🔄 Nginx Proxy: Running ✅"
           echo "============================================="
         ENDSSH

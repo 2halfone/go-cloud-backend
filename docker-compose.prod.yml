@@ -93,7 +93,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
   # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
@@ -112,6 +111,31 @@ services:
     networks:
       - microservices-net
     restart: unless-stopped
+
+  # --- Dashboard API Service ---
+  dashboard-api:
+    build:
+      context: ./monitoring/dashboard-api
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      # Database connections for metrics collection
+      AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
+      USER_DATABASE_URL: postgres://user_admin:user_password@user-db:5432/users_db?sslmode=disable
+      PROMETHEUS_URL: http://prometheus-service:9090
+    depends_on:
+      - prometheus-service
+      - auth-db
+      - user-db
+    networks:
+      - microservices-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   nginx:
     image: nginx:alpine
