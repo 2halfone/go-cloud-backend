@@ -1,7 +1,7 @@
 
 Schema dell'Applicazione Go Cloud Backend.
 
-graph TB
+graph TB.
     %% Client Layer
     Client[🌐 Client/Browser<br/>Frontend App]
     
