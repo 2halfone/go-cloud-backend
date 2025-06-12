@@ -92,7 +92,24 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 3  # --- Node Exporter for System Metrics ---
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - microservices-net
+    restart: unless-stopped
+
   # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
@@ -108,6 +125,8 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
       - '--web.listen-address=0.0.0.0:9090'
+    depends_on:
+      - node-exporter
     networks:
       - microservices-net
     restart: unless-stopped
