@@ -220,10 +220,10 @@ jobs:
           for i in {1..5}; do
             if curl -f http://localhost:3000/health; then
               echo "✅ Gateway is healthy!"
-              break
-            fi
+              break            fi
             echo "⏳ Attempt $i/5 - waiting for gateway..."
-            sleep 10          done
+            sleep 10
+          done
         ENDSSH
 
   # Job 6: Deploy Prometheus Monitoring
