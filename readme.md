@@ -3,7 +3,7 @@ Schema dell'Applicazione Go Cloud Backend.
 
 graph TB.
     %% Client Layer
-    Client[🌐 Client/Browser<br/>Frontend App]
+    Client[🌐 Client/Browser<br/>Frontend App].
     
     %% Load Balancer/Proxy Layer
     Internet((🌍 Internet<br/>Port 80/443))
