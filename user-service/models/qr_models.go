@@ -83,7 +83,7 @@ type GenerateQRRequest struct {
 // Request per scansionare QR e registrare presenza
 type AttendanceRequest struct {
 	QRContent   QRContent `json:"qr_content"`
-	Status      string    `json:"status"`
+	// Status field removed - presence is automatic when scanning QR
 	Motivazione string    `json:"motivazione,omitempty"`
 }
 

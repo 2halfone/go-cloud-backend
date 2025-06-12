@@ -143,18 +143,18 @@ func scanQRHandler(c *fiber.Ctx) error {
             "error": "Payload non valido",
         })
     }
-    
-    // Validazioni
-    if req.QRContent.JWT == "" || req.Status == "" {
+      // Validazioni
+    if req.QRContent.JWT == "" {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "QR content e status sono richiesti",
+            "error": "QR content è richiesto",
         })
     }
     
-    if !isValidStatus(req.Status) {
+    // Validate QR type (mantieni validazione QR essenziale)
+    if req.QRContent.Type != "" && req.QRContent.Type != "attendance_qr" {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "Status non valido",
-            "valid_statuses": ValidStatuses,
+            "error": "Tipo QR non supportato",
+            "received_type": req.QRContent.Type,
         })
     }
     
@@ -219,18 +219,18 @@ func scanQRHandler(c *fiber.Ctx) error {
             "error": "Errore salvataggio presenza",
         })
     }
-    
-    // Record successful QR scan metric
+      // Record successful QR scan metric
     qrScansTotal.WithLabelValues(qrClaims.EventID, "success", "user-service").Inc()
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-        "message":     "QR scannerizzato con successo - scegli il tuo status",
+        "success":     true,
+        "message":     "Presenza registrata automaticamente",
         "event_id":    qrClaims.EventID,
         "event_name":  qrClaims.EventName,
-        "status":      "not_registered", // Status remains not_registered until user chooses
+        "status":      "present", // Always present when scanning
         "timestamp":   time.Now().Format(time.RFC3339),
+        "validation":  "automatic",
         "table_name":  tableName,
-        "next_step":   "Scegli se sei presente o assente e con quale motivazione",
     })
 }
 
