@@ -215,12 +215,12 @@ jobs:
           
           echo "⏳ Waiting for gateway to be ready..."
           sleep 20
-          
-          # Health check
+            # Health check
           for i in {1..5}; do
             if curl -f http://localhost:3000/health; then
               echo "✅ Gateway is healthy!"
-              break            fi
+              break
+            fi
             echo "⏳ Attempt $i/5 - waiting for gateway..."
             sleep 10
           done
