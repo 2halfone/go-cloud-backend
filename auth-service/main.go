@@ -10,6 +10,7 @@ import (
     "os"
     "strconv"
     "strings"
+    "sync"
     "time"
 
     "github.com/gofiber/fiber/v2"
@@ -18,7 +19,6 @@ import (
     "github.com/golang-jwt/jwt/v4"
     "golang.org/x/crypto/bcrypt"
     "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
 )
@@ -26,62 +26,77 @@ import (
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// Prometheus metrics
+// Metrics registration once
 var (
-    // HTTP Metrics
-    httpRequestsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "http_requests_total",
-            Help: "Total number of HTTP requests",
-        },
-        []string{"method", "endpoint", "status_code", "service"},
-    )
-
-    httpRequestDuration = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "http_request_duration_seconds",
-            Help:    "Duration of HTTP requests in seconds",
-            Buckets: prometheus.DefBuckets,
-        },
-        []string{"method", "endpoint", "service"},
-    )
-
-    // Authentication Metrics
-    authAttemptsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "auth_attempts_total",
-            Help: "Total number of authentication attempts",
-        },
-        []string{"status", "service"},
-    )
-
-    // Active Users
-    activeUsers = promauto.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "active_users_total",
-            Help: "Number of active users",
-        },
-        []string{"service"},
-    )
-
-    // Database Connections
-    databaseConnections = promauto.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "database_connections_active",
-            Help: "Number of active database connections",
-        },
-        []string{"service", "database"},
-    )
-
-    // System Errors
-    systemErrorsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "system_errors_total",
-            Help: "Total number of system errors",
-        },
-        []string{"service", "error_type"},
-    )
+    metricsOnce sync.Once
+    httpRequestsTotal *prometheus.CounterVec
+    httpRequestDuration *prometheus.HistogramVec
+    authAttemptsTotal *prometheus.CounterVec
+    activeUsers prometheus.Gauge
+    databaseConnections *prometheus.GaugeVec
+    systemErrorsTotal *prometheus.CounterVec
 )
+
+// Initialize metrics once
+func initMetrics() {
+    metricsOnce.Do(func() {
+        httpRequestsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "http_requests_total",
+                Help: "Total number of HTTP requests",
+            },
+            []string{"method", "endpoint", "status_code", "service"},
+        )
+
+        httpRequestDuration = prometheus.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Name:    "http_request_duration_seconds",
+                Help:    "Duration of HTTP requests in seconds",
+                Buckets: prometheus.DefBuckets,
+            },
+            []string{"method", "endpoint", "service"},
+        )
+
+        authAttemptsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "auth_attempts_total",
+                Help: "Total number of authentication attempts",
+            },
+            []string{"status", "service"},
+        )
+
+        activeUsers = prometheus.NewGauge(
+            prometheus.GaugeOpts{
+                Name: "active_users_total",
+                Help: "Number of active users",
+            },
+        )
+
+        databaseConnections = prometheus.NewGaugeVec(
+            prometheus.GaugeOpts{
+                Name: "database_connections_active",
+                Help: "Number of active database connections",
+            },
+            []string{"service", "database"},
+        )
+
+        systemErrorsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "system_errors_total",
+                Help: "Total number of system errors",
+            },
+            []string{"service", "error_type"},
+        )
+
+        // Register metrics only once
+        prometheus.MustRegister(httpRequestsTotal)
+        prometheus.MustRegister(httpRequestDuration)
+        prometheus.MustRegister(authAttemptsTotal)
+        prometheus.MustRegister(activeUsers)
+        prometheus.MustRegister(databaseConnections)
+        prometheus.MustRegister(systemErrorsTotal)
+    })
+}
 
 // Metrics middleware for HTTP requests
 func metricsMiddleware() fiber.Handler {
@@ -119,7 +134,7 @@ func updateActiveUsersCount() {
         var count int
         query := `SELECT COUNT(*) FROM users WHERE last_login >= NOW() - INTERVAL '30 minutes'`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            activeUsers.WithLabelValues("auth-service").Set(float64(count))
+            activeUsers.Set(float64(count))
         }
     }
 }
@@ -656,10 +671,14 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
 }
 
 func main() {
+    // Initialize metrics first
+    initMetrics()
+    
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
     if jwtSecretEnv == "" {
-        log.Fatal("JWT_SECRET environment variable not set")    }
+        log.Fatal("JWT_SECRET environment variable not set")
+    }
     jwtSecret = []byte(jwtSecretEnv)
 
     // Connetti al database

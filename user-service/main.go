@@ -8,6 +8,7 @@ import (
     "os"
     "strconv"
     "strings"
+    "sync"
     "time"
     "user-service/database"
 
@@ -17,7 +18,6 @@ import (
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
     "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
@@ -29,79 +29,96 @@ var jwtSecret []byte
 // Auth service database connection
 var authDB *sql.DB
 
-// Prometheus metrics
+// Metrics registration once
 var (
-    // HTTP Metrics
-    httpRequestsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "http_requests_total",
-            Help: "Total number of HTTP requests",
-        },
-        []string{"method", "endpoint", "status_code", "service"},
-    )
-
-    httpRequestDuration = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "http_request_duration_seconds",
-            Help:    "Duration of HTTP requests in seconds",
-            Buckets: prometheus.DefBuckets,
-        },
-        []string{"method", "endpoint", "service"},
-    )
-
-    // QR Code Metrics
-    qrScansTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "qr_scans_total",
-            Help: "Total number of QR code scans",
-        },
-        []string{"event_id", "status", "service"},
-    )
-
-    qrEventsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "qr_events_total",
-            Help: "Total number of QR events created",
-        },
-        []string{"service"},
-    )
-
-    // Active Users
-    activeUsers = promauto.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "active_users_total",
-            Help: "Number of active users",
-        },
-        []string{"service"},
-    )
-
-    // Database Connections
-    databaseConnections = promauto.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "database_connections_active",
-            Help: "Number of active database connections",
-        },
-        []string{"service", "database"},
-    )
-
-    // System Errors
-    systemErrorsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "system_errors_total",
-            Help: "Total number of system errors",
-        },
-        []string{"service", "error_type"},
-    )
-
-    // Attendance Events
-    attendanceEventsTotal = promauto.NewGaugeVec(
-        prometheus.GaugeOpts{
-            Name: "attendance_events_active",
-            Help: "Number of active attendance events",
-        },
-        []string{"service"},
-    )
+    metricsOnce sync.Once
+    httpRequestsTotal *prometheus.CounterVec
+    httpRequestDuration *prometheus.HistogramVec
+    qrScansTotal *prometheus.CounterVec
+    qrEventsTotal *prometheus.CounterVec
+    activeUsers prometheus.Gauge
+    databaseConnections *prometheus.GaugeVec
+    systemErrorsTotal *prometheus.CounterVec
+    attendanceEventsTotal prometheus.Gauge
 )
+
+// Initialize metrics once
+func initMetrics() {
+    metricsOnce.Do(func() {
+        httpRequestsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "http_requests_total",
+                Help: "Total number of HTTP requests",
+            },
+            []string{"method", "endpoint", "status_code", "service"},
+        )
+
+        httpRequestDuration = prometheus.NewHistogramVec(
+            prometheus.HistogramOpts{
+                Name:    "http_request_duration_seconds",
+                Help:    "Duration of HTTP requests in seconds",
+                Buckets: prometheus.DefBuckets,
+            },
+            []string{"method", "endpoint", "service"},
+        )
+
+        qrScansTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "qr_scans_total",
+                Help: "Total number of QR code scans",
+            },
+            []string{"event_id", "status", "service"},
+        )
+
+        qrEventsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "qr_events_total",
+                Help: "Total number of QR events created",
+            },
+            []string{"service"},
+        )
+
+        activeUsers = prometheus.NewGauge(
+            prometheus.GaugeOpts{
+                Name: "active_users_total",
+                Help: "Number of active users",
+            },
+        )
+
+        databaseConnections = prometheus.NewGaugeVec(
+            prometheus.GaugeOpts{
+                Name: "database_connections_active",
+                Help: "Number of active database connections",
+            },
+            []string{"service", "database"},
+        )
+
+        systemErrorsTotal = prometheus.NewCounterVec(
+            prometheus.CounterOpts{
+                Name: "system_errors_total",
+                Help: "Total number of system errors",
+            },
+            []string{"service", "error_type"},
+        )
+
+        attendanceEventsTotal = prometheus.NewGauge(
+            prometheus.GaugeOpts{
+                Name: "attendance_events_active",
+                Help: "Number of active attendance events",
+            },
+        )
+
+        // Register metrics only once
+        prometheus.MustRegister(httpRequestsTotal)
+        prometheus.MustRegister(httpRequestDuration)
+        prometheus.MustRegister(qrScansTotal)
+        prometheus.MustRegister(qrEventsTotal)
+        prometheus.MustRegister(activeUsers)
+        prometheus.MustRegister(databaseConnections)
+        prometheus.MustRegister(systemErrorsTotal)
+        prometheus.MustRegister(attendanceEventsTotal)
+    })
+}
 
 // Metrics middleware for HTTP requests
 func metricsMiddleware() fiber.Handler {
@@ -139,7 +156,7 @@ func updateActiveUsersCount() {
         var count int
         query := `SELECT COUNT(*) FROM users WHERE status = 'active'`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            activeUsers.WithLabelValues("user-service").Set(float64(count))
+            activeUsers.Set(float64(count))
         }
     }
 }
@@ -165,7 +182,7 @@ func updateAttendanceEventsCount() {
         var count int
         query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            attendanceEventsTotal.WithLabelValues("user-service").Set(float64(count))
+            attendanceEventsTotal.Set(float64(count))
         }
     }
 }
@@ -1017,6 +1034,9 @@ func connectAuthServiceDB() {
 }
 
 func main() {
+    // Initialize metrics first
+    initMetrics()
+    
     // Initialize database connection
     database.Connect()
     
