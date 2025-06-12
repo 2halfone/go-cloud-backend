@@ -68,7 +68,6 @@ services:
       - user_db_data:/var/lib/postgresql/data
     networks:
       - microservices-net
-
   # --- User Service (aggiornato con database) ---
   user-service:
     build:
@@ -87,8 +86,7 @@ services:
       - auth-db
     networks:
       - microservices-net
-    restart: unless-stopped
-    healthcheck:
+    restart: unless-stopped    healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
@@ -96,6 +94,22 @@ services:
 
   # --- Prometheus Monitoring Service ---
   prometheus-service:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.listen-address=0.0.0.0:9090'
+    networks:
+      - microservices-net
+    restart: unless-stopped
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
