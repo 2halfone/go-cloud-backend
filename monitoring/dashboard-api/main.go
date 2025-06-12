@@ -692,8 +692,8 @@ func getSuccessfulLogins24h() int {
 			SELECT COUNT(*) 
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'success' 
-			AND created_at >= NOW() - INTERVAL '24 hours'
+			AND success = true 
+			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved successful logins from DB: %d", count)
@@ -721,8 +721,8 @@ func getFailedAttempts24h() int {
 			SELECT COUNT(*) 
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'failed' 
-			AND created_at >= NOW() - INTERVAL '24 hours'
+			AND success = false 
+			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved failed attempts from DB: %d", count)
@@ -750,14 +750,14 @@ func getAuthSuccessRate() float64 {
 			SELECT COUNT(*) 
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'success' 
-			AND created_at >= NOW() - INTERVAL '24 hours'
+			AND success = true 
+			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		totalQuery := `
 			SELECT COUNT(*) 
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND created_at >= NOW() - INTERVAL '24 hours'
+			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		
 		if err := authDB.QueryRow(successQuery).Scan(&successCount); err == nil {
@@ -779,12 +779,12 @@ func getSuspiciousActivityCount() int {
 			SELECT COUNT(*) 
 			FROM auth_logs 
 			WHERE (
-				(action = 'login' AND status = 'failed' AND created_at >= NOW() - INTERVAL '1 hour')
+				(action = 'login' AND success = false AND timestamp >= NOW() - INTERVAL '1 hour')
 				OR (ip_address IN (
 					SELECT ip_address 
 					FROM auth_logs 
-					WHERE action = 'login' AND status = 'failed' 
-					AND created_at >= NOW() - INTERVAL '24 hours'
+					WHERE action = 'login' AND success = false 
+					AND timestamp >= NOW() - INTERVAL '24 hours'
 					GROUP BY ip_address 
 					HAVING COUNT(*) > 5
 				))
@@ -820,12 +820,12 @@ func getActiveSessions() int {
 func getPeakLoginHours() []HourlyStats {
 	if authDB != nil {
 		query := `
-			SELECT EXTRACT(HOUR FROM created_at) as hour, COUNT(*) as count
+			SELECT EXTRACT(HOUR FROM timestamp) as hour, COUNT(*) as count
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'success' 
-			AND created_at >= NOW() - INTERVAL '7 days'
-			GROUP BY EXTRACT(HOUR FROM created_at)
+			AND success = true 
+			AND timestamp >= NOW() - INTERVAL '7 days'
+			GROUP BY EXTRACT(HOUR FROM timestamp)
 			ORDER BY count DESC
 			LIMIT 5
 		`
@@ -858,7 +858,7 @@ func getWeeklyLoginPattern() []DailyStats {
 	if authDB != nil {
 		query := `
 			SELECT 
-				CASE EXTRACT(DOW FROM created_at)
+				CASE EXTRACT(DOW FROM timestamp)
 					WHEN 0 THEN 'Sunday'
 					WHEN 1 THEN 'Monday'
 					WHEN 2 THEN 'Tuesday'
@@ -870,10 +870,10 @@ func getWeeklyLoginPattern() []DailyStats {
 				COUNT(*) as count
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'success' 
-			AND created_at >= NOW() - INTERVAL '30 days'
-			GROUP BY EXTRACT(DOW FROM created_at)
-			ORDER BY EXTRACT(DOW FROM created_at)
+			AND success = true 
+			AND timestamp >= NOW() - INTERVAL '30 days'
+			GROUP BY EXTRACT(DOW FROM timestamp)
+			ORDER BY EXTRACT(DOW FROM timestamp)
 		`
 		rows, err := authDB.Query(query)
 		if err == nil {
@@ -907,8 +907,8 @@ func getGeoLoginSpread() []GeoStats {
 				COUNT(*) as login_count
 			FROM auth_logs 
 			WHERE action = 'login' 
-			AND status = 'success' 
-			AND created_at >= NOW() - INTERVAL '30 days'
+			AND success = true 
+			AND timestamp >= NOW() - INTERVAL '30 days'
 			GROUP BY country
 			ORDER BY login_count DESC
 			LIMIT 10
@@ -942,7 +942,7 @@ func getQRScans24h() int {
 		query := `
 			SELECT COUNT(*) 
 			FROM attendance_events 
-			WHERE created_at >= NOW() - INTERVAL '24 hours'
+			WHERE timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		if err := userDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved QR scans from DB: %d", count)
