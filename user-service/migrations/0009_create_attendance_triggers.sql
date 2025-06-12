@@ -1,54 +1,29 @@
 -- user-service/migrations/0009_create_attendance_triggers.sql
--- Create triggers and functions for automatic status management
+-- DISABLED: This migration conflicts with automatic QR system
+-- Migration disabled to prevent conflicts with backend-driven automatic presence
 
 -- ============================================================================
--- 1. TRIGGER FUNCTION: Auto-set status to 'present' when QR is scanned
+-- MIGRATION DISABLED NOTICE
 -- ============================================================================
 
--- Function to auto-set status to 'present' when QR is scanned
-CREATE OR REPLACE FUNCTION auto_set_present_on_scan()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- If scanned_at is being set (not null) and status is still 'not_registered'
-    IF NEW.scanned_at IS NOT NULL AND (OLD.scanned_at IS NULL OR OLD.status = 'not_registered') THEN
-        NEW.status = 'present';
-        NEW.updated_at = NOW();
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+/*
+This migration has been DISABLED because:
 
--- Function to create trigger for a specific attendance table
-CREATE OR REPLACE FUNCTION create_attendance_trigger(table_name TEXT)
-RETURNS VOID AS $$
-BEGIN
-    -- Create trigger for auto-setting status to present on scan
-    EXECUTE format(
-        'CREATE OR REPLACE TRIGGER tr_%I_auto_present 
-         BEFORE INSERT OR UPDATE ON %I
-         FOR EACH ROW 
-         EXECUTE FUNCTION auto_set_present_on_scan()',
-        table_name, table_name
-    );
-    
-    RAISE NOTICE 'Created trigger tr_%_auto_present for table %', table_name, table_name;
-END;
-$$ LANGUAGE plpgsql;
+1. It creates database triggers that conflict with backend logic
+2. The automatic QR system is now handled entirely by Go backend code
+3. Database triggers were causing inconsistent status updates
+4. Backend provides better error handling and success/failure tracking
 
--- ============================================================================
--- 2. AUTO-POPULATION FUNCTION: Populate all users when new event created
--- ============================================================================
+The functionality this migration intended to provide is now handled by:
+- user-service/qr_handlers.go: ScanQRHandler function
+- Automatic status setting to 'present' when QR code is scanned
+- Success/error tracking in attendance_events table
+- Admin monitoring through event statistics
+*/
 
--- Function to populate all users when new event is created
-CREATE OR REPLACE FUNCTION populate_event_users(event_table_name TEXT)
-RETURNS INTEGER AS $$
-DECLARE
-    user_count INTEGER := 0;
-    user_record RECORD;
-BEGIN    -- Insert all existing users into the event table with default status
-    FOR user_record IN 
-        SELECT id, name, last_name 
+-- This migration is intentionally left as NO-OP to maintain migration sequence
+
+SELECT 'Migration 0009: DISABLED - Functionality moved to backend QR system' as result;
         FROM users 
         WHERE status = 'active'
     LOOP

@@ -1,33 +1,25 @@
 -- user-service/migrations/0004_create_attendance.sql
--- NOTA: Questa migrazione è COMPLETAMENTE DISABILITATA
--- Il sistema usa SOLO tabelle dinamiche, non la tabella statica 'attendance'
--- Le tabelle dinamiche sono gestite dalle migrazioni 0008, 0009, 0010, e 0011
+-- MIGRATION ELIMINATA - Non necessaria per sistema dinamico
 
 -- ============================================================================
--- QUESTA MIGRAZIONE NON È ATTIVA - NON CREA NULLA
+-- MIGRATION ELIMINATA: Tabelle statiche rimosse dal sistema
 -- ============================================================================
 
--- Questa migrazione originariamente creava una tabella statica 'attendance'
--- ma il sistema attuale usa SOLO tabelle dinamiche con nome: attendance_EVENTNAME_DATE
--- 
--- Esempi di tabelle dinamiche:
--- - attendance_poiu_2025_06_11
--- - attendance_daily_attendanc_2025_06_10
--- - attendance_event_name_YYYY_MM_DD
+-- Questa migration è stata completamente rimossa perché:
+-- 1. Il sistema usa SOLO tabelle dinamiche (attendance_evento_data)
+-- 2. Le tabelle statiche causavano problemi di performance
+-- 3. Sistema automatico QR non richiede tabelle centrali
 --
--- La struttura è definita in:
--- - user-service/services/qr_service.go -> CreateAttendanceTable()
--- - Migrazioni 0008, 0009, 0010, 0011 per triggers, automation, e fix
---
--- Status values usati: 'not_registered', 'present', 'hospital', 'family', 
---                      'emergency', 'personal', 'vacancy'
+-- Struttura dinamica gestita in:
+-- - services/qr_service.go -> CreateAttendanceTable()
+-- - Migration 0008 per setup base
+-- - Migration 0012 per sistema automatico finale
+
+-- Status supportati: 'present' (scan automatico), 'not_registered' (default)
 
 -- ============================================================================
--- MIGRATION STATUS: DISABLED - NO-OP
+-- NO-OP: Questa migration non fa nulla
 -- ============================================================================
 
--- Questa migrazione non fa NULLA perché la tabella statica attendance non è usata
--- Il sistema crea automaticamente tabelle dinamiche per ogni evento
-
--- Verifica che la migrazione sia disabilitata
+SELECT 'Migration 0004: Static attendance table removed - using dynamic tables only' as status;
 SELECT 'Migration 0004: DISABLED - System uses ONLY dynamic tables (attendance_EVENTNAME_DATE)' as notice;

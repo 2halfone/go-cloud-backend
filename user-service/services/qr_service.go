@@ -186,61 +186,62 @@ func CreateAttendanceTable(eventID string) error {
 	// Sanitize table name (replace hyphens with underscores, ensure valid SQL identifier)
 	tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
 
-	// Create table with enhanced structure for status management
-	createTableQuery := fmt.Sprintf(`
-        CREATE TABLE IF NOT EXISTS %s (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            surname VARCHAR(255) NOT NULL,
-            scanned_at TIMESTAMPTZ,
-            timestamp TIMESTAMP NULL,
-            status VARCHAR(50) DEFAULT 'not_registered' CHECK (status IN ('present', 'hospital', 'family', 'emergency', 'vacancy', 'personal', 'not_registered')),
-            motivazione TEXT,
-            updated_by INTEGER REFERENCES users(id),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id)
-        )`, tableName)
-
-	_, err := database.DB.Exec(createTableQuery)
+	// Use the new automatic system function from migration 0012
+	setupQuery := `SELECT setup_automatic_attendance_event($1)`
+	var resultMessage string
+	err := database.DB.QueryRow(setupQuery, tableName).Scan(&resultMessage)
 	if err != nil {
-		return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
-	}	// DISABLED: Use the new automated setup function from migration 0009
-	// setupSQL := "SELECT setup_new_attendance_table($1)"
-	log.Printf("Skipping automated trigger setup to avoid auto-present issue for table %s", tableName)
-	
-	// Manual setup WITHOUT problematic triggers
-	log.Printf("Setting up table %s without auto-present triggers", tableName)
+		log.Printf("Warning: Failed to use automatic setup, falling back to manual creation: %v", err)
+		
+		// Fallback to manual creation for backward compatibility
+		createTableQuery := fmt.Sprintf(`
+			CREATE TABLE IF NOT EXISTS %s (
+				id SERIAL PRIMARY KEY,
+				user_id INTEGER REFERENCES users(id),
+				name VARCHAR(255),
+				surname VARCHAR(255),
+				status VARCHAR(50) DEFAULT 'not_registered' CHECK (status IN ('present', 'not_registered')),
+				scanned_at TIMESTAMPTZ,
+				updated_at TIMESTAMPTZ DEFAULT NOW(),
+				UNIQUE(user_id)
+			)`, tableName)
 
-	// Manual index creation (keep the indexes, just skip the problematic trigger)
-	indexQueries := []string{
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_scanned_at ON %s(scanned_at)", tableName, tableName),
-	}
-
-	for _, indexQuery := range indexQueries {
-		if _, err := database.DB.Exec(indexQuery); err != nil {
-			log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+		_, err := database.DB.Exec(createTableQuery)
+		if err != nil {
+			return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
 		}
+
+		// Manual index creation
+		indexQueries := []string{
+			fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
+			fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
+			fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
+			fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_scanned_at ON %s(scanned_at)", tableName, tableName),
+		}
+
+		for _, indexQuery := range indexQueries {
+			if _, err := database.DB.Exec(indexQuery); err != nil {
+				log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+			}
+		}
+
+		// Manual user population
+		if err := PopulateEventUsers(tableName); err != nil {
+			log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
+		}
+
+		log.Printf("✅ Created attendance table: %s with manual setup (automatic system)", tableName)
+	} else {
+		log.Printf("✅ %s", resultMessage)
 	}
 
-	// Manual user population
-	if err := PopulateEventUsers(tableName); err != nil {
-		log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
-	}
-
-	log.Printf("✅ Created attendance table: %s with enhanced status management", tableName)
 	return nil
 }
 
 // Populate all active users into event table with default status
 func PopulateEventUsers(tableName string) error {
-	// Get all active users
-	query := `SELECT id, name, last_name FROM users WHERE status = 'active'`
+	// Get all authenticated users (not filtering by status)
+	query := `SELECT id, name, last_name FROM users ORDER BY name, last_name`
 	rows, err := database.DB.Query(query)
 	if err != nil {
 		return fmt.Errorf("failed to query users: %v", err)
@@ -269,11 +270,10 @@ func PopulateEventUsers(tableName string) error {
 			log.Printf("Error inserting user %d into %s: %v", userID, tableName, err)
 			continue
 		}
-
 		userCount++
 	}
 
-	log.Printf("✅ Populated %d users in event table %s", userCount, tableName)
+	log.Printf("✅ Populated %d authenticated users in event table %s", userCount, tableName)
 	return nil
 }
 

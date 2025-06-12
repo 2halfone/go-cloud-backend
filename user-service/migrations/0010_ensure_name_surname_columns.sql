@@ -1,54 +1,28 @@
 -- user-service/migrations/0010_ensure_name_surname_columns.sql
--- Ensure all dynamic attendance tables have name and surname columns
+-- DISABLED: Functionality now handled by migration 0008 automatic system
+-- Migration disabled to prevent duplication and conflicts
 
 -- ============================================================================
--- 1. Add name and surname columns to existing attendance tables
+-- MIGRATION DISABLED NOTICE
 -- ============================================================================
 
--- Function to add name and surname columns to existing attendance tables
-CREATE OR REPLACE FUNCTION ensure_name_surname_columns()
-RETURNS VOID AS $$
-DECLARE
-    table_name TEXT;
-    table_record RECORD;
-    update_count INTEGER;
-BEGIN
-    -- Loop through all existing attendance tables
-    FOR table_record IN 
-        SELECT tablename 
-        FROM pg_tables 
-        WHERE tablename LIKE 'attendance_%' 
-        AND tablename != 'attendance_events'
-        AND schemaname = 'public'
-    LOOP
-        table_name := table_record.tablename;
-        
-        -- Add name column if it doesn't exist
-        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS name VARCHAR(255)', table_name);
-        
-        -- Add surname column if it doesn't exist  
-        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS surname VARCHAR(255)', table_name);
-        
-        -- Update existing records to populate name and surname from users table
-        EXECUTE format(
-            'UPDATE %I SET 
-                name = u.name,
-                surname = u.last_name,
-                updated_at = NOW()
-             FROM users u 
-             WHERE %I.user_id = u.id 
-             AND (%I.name IS NULL OR %I.surname IS NULL)',
-            table_name, table_name, table_name, table_name
-        );
-        
-        GET DIAGNOSTICS update_count = ROW_COUNT;
-        
-        IF update_count > 0 THEN
-            RAISE NOTICE 'Updated % records with name/surname in table %', update_count, table_name;
-        END IF;
-        
-        RAISE NOTICE 'Ensured name/surname columns in table: %', table_name;
-    END LOOP;
+/*
+This migration has been DISABLED because:
+
+1. Functionality is now fully handled by migration 0008 (automatic system)
+2. Migration 0008 already ensures name and surname columns exist
+3. Avoiding duplication and potential conflicts
+4. The automatic system migration handles all necessary column additions
+
+The functionality this migration intended to provide is now handled by:
+- Migration 0008: update_attendance_tables_for_automatic_system() function
+- Automatic column creation and data population
+- Consistent with the new automatic QR attendance system
+*/
+
+-- This migration is intentionally left as NO-OP to maintain migration sequence
+
+SELECT 'Migration 0010: DISABLED - Functionality integrated into 0008 automatic system' as result;
 END;
 $$ LANGUAGE plpgsql;
 

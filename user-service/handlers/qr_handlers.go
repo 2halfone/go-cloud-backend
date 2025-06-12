@@ -205,17 +205,42 @@ func ScanQRHandler(c *fiber.Ctx) error {
             "error": "Errore sincronizzazione utente",
             "details": err.Error(),        })
     }
-    
-    // Registra presenza nella tabella dinamica dell'evento
+      // Registra presenza nella tabella dinamica dell'evento
     tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
     err = services.InsertAttendanceRecord(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
+        
+        // Track scan error in database for admin monitoring
+        var eventDBID int
+        eventQuery := `SELECT id FROM attendance_events WHERE event_id = $1`
+        if dbErr := database.DB.QueryRow(eventQuery, qrClaims.EventID).Scan(&eventDBID); dbErr == nil {
+            trackQuery := `SELECT track_qr_scan_result($1, $2, $3)`
+            database.DB.Exec(trackQuery, eventDBID, false, fmt.Sprintf("Failed to save attendance: %v", err))
+        }
+        
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
     }
-      return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+
+    // Track successful scan and update event statistics
+    var eventDBID int
+    eventQuery := `SELECT id FROM attendance_events WHERE event_id = $1`
+    err = database.DB.QueryRow(eventQuery, qrClaims.EventID).Scan(&eventDBID)
+    if err == nil {
+        // Track successful scan
+        trackQuery := `SELECT track_qr_scan_result($1, $2, $3)`
+        database.DB.Exec(trackQuery, eventDBID, true, nil)
+        
+        // Update event statistics
+        updateStatsQuery := `SELECT update_event_statistics($1, $2)`
+        database.DB.Exec(updateStatsQuery, tableName, eventDBID)
+    } else {
+        log.Printf("Warning: Could not update event statistics for event %s: %v", qrClaims.EventID, err)
+    }
+
+    return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "success":     true,
         "message":     "Presenza registrata automaticamente",
         "event_id":    qrClaims.EventID,

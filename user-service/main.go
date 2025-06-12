@@ -154,7 +154,7 @@ func updateActiveUsersCount() {
     db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM users WHERE status = 'active'`
+        query := `SELECT COUNT(*) FROM users`
         if err := db.QueryRow(query).Scan(&count); err == nil {
             activeUsers.Set(float64(count))
         }
@@ -528,8 +528,8 @@ func createAttendanceTable(eventID string) error {
 
 // Populate all active users into event table with default status
 func populateEventUsers(tableName string) error {
-    // Get all active users
-    query := `SELECT id, name, last_name FROM users WHERE status = 'active'`
+    // Get all authenticated users (not filtering by status)
+    query := `SELECT id, name, last_name FROM users ORDER BY name, last_name`
     rows, err := database.DB.Query(query)
     if err != nil {
         return fmt.Errorf("failed to query users: %v", err)
