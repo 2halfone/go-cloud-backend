@@ -299,9 +299,9 @@ func HasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
 		return false, nil
 	}
 
-	// Check if user exists in the event's attendance table
+	// Check if user has actually SCANNED (scanned_at IS NOT NULL) for this event
 	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = $1", tableName)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = $1 AND scanned_at IS NOT NULL", tableName)
 	err = database.DB.QueryRow(query, userID).Scan(&count)
 	if err != nil {
 		return false, err
@@ -349,7 +349,7 @@ func InsertAttendanceRecord(tableName string, userID int, userName, userSurname 
 
 func HasUserScannedEvent(userID int, eventID string) (bool, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND event_id = $2`
+	query := `SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND event_id = $2 AND timestamp IS NOT NULL`
 	err := database.DB.QueryRow(query, userID, eventID).Scan(&count)
 	return count > 0, err
 }
