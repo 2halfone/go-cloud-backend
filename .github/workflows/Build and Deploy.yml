@@ -344,11 +344,12 @@ jobs:
           
           echo "⏳ Waiting for nginx to be ready..."
           sleep 10
-          
-          # Check nginx status
+            # Check nginx status
           docker-compose -f docker-compose.prod.yml ps nginx
           echo "✅ Nginx deployed successfully!"
-        ENDSSH  # Job 9: Verifica finale del deployment
+        ENDSSH
+
+  # Job 9: Verifica finale del deployment
   verify-deployment:
     name: ✅ Verify Deployment
     runs-on: ubuntu-latest
