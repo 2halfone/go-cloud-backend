@@ -223,15 +223,59 @@ jobs:
               break
             fi
             echo "⏳ Attempt $i/5 - waiting for gateway..."
-            sleep 10
-          done
+            sleep 10          done
         ENDSSH
 
-  # Job 6: Deploy Nginx (reverse proxy)
+  # Job 6: Deploy Prometheus Monitoring
+  deploy-prometheus:
+    name: 📊 Deploy Prometheus Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy-gateway
+    
+    steps:
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy Prometheus Service
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} << 'ENDSSH'
+          set -e
+          cd /home/${{ secrets.USERNAME }}/go-cloud-backend
+          
+          echo "📊 Starting Prometheus Monitoring Service..."
+          docker-compose -f docker-compose.prod.yml up -d prometheus-service
+          
+          echo "⏳ Waiting for prometheus to be ready..."
+          sleep 15
+          
+          # Health check for Prometheus
+          for i in {1..5}; do
+            if curl -f http://localhost:9090/-/ready; then
+              echo "✅ Prometheus is ready!"
+              break
+            fi
+            echo "⏳ Attempt $i/5 - waiting for prometheus..."
+            sleep 10
+          done
+          
+          # Check targets status
+          echo "🎯 Checking Prometheus targets..."
+          sleep 5
+          curl -s http://localhost:9090/api/v1/targets | grep -o '"health":"[^"]*"' | sort | uniq -c || echo "Targets still initializing..."
+          
+          # Check if prometheus container is running
+          docker-compose -f docker-compose.prod.yml ps prometheus-service
+          echo "✅ Prometheus Monitoring deployed successfully!"
+        ENDSSH
+  # Job 7: Deploy Nginx (reverse proxy)
   deploy-nginx:
     name: 🔄 Deploy Nginx Proxy
     runs-on: ubuntu-latest
-    needs: deploy-gateway
+    needs: [deploy-gateway, deploy-prometheus]
     
     steps:
     - name: Setup SSH Key
@@ -257,8 +301,7 @@ jobs:
           docker-compose -f docker-compose.prod.yml ps nginx
           echo "✅ Nginx deployed successfully!"
         ENDSSH
-
-  # Job 7: Verifica finale del deployment
+  # Job 8: Verifica finale del deployment
   verify-deployment:
     name: ✅ Verify Deployment
     runs-on: ubuntu-latest
@@ -291,9 +334,11 @@ jobs:
           # Test internal services health (should only be accessible internally)
           echo "🔐 Testing Auth Service health..."
           curl -f http://localhost:3001/health
-          
-          echo "👤 Testing User Service health..."
+            echo "👤 Testing User Service health..."
           curl -f http://localhost:3002/health
+          
+          echo "📊 Testing Prometheus monitoring..."
+          curl -f http://localhost:9090/-/ready
           
           echo ""
           echo "🎉 ===== DEPLOYMENT COMPLETED SUCCESSFULLY ====="
@@ -302,6 +347,7 @@ jobs:
           echo "🔐 Auth Service: Running ✅"
           echo "👤 User Service: Running ✅"
           echo "🌐 Gateway: Running ✅"
+          echo "📊 Prometheus: Running ✅"
           echo "🔄 Nginx Proxy: Running ✅"
           echo "============================================="
         ENDSSH
