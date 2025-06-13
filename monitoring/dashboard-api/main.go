@@ -644,21 +644,12 @@ func getServiceResponseTime(service string) float64 {
 	query := fmt.Sprintf(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="%s"}[5m]))`, service)
 	data, err := queryPrometheus(query)
 	if err != nil {
-		log.Printf("⚠️ Failed to get response time for %s, using fallback", service)
-		switch service {
-		case "auth-service":
-			return 125.5
-		case "user-service":
-			return 98.2
-		case "gateway":
-			return 89.7
-		default:
-			return 95.0
-		}
+		log.Printf("⚠️ Failed to get response time for %s, data unavailable", service)
+		return 0.0 // Return 0 instead of hardcoded values
 	}
 	result := parsePrometheusValue(data) * 1000 // Convert to ms
 	if result == 0 {
-		return 95.0
+		return 0.0 // Return 0 instead of hardcoded values
 	}
 	return result
 }
@@ -667,12 +658,12 @@ func getServiceUptime(service string) float64 {
 	query := fmt.Sprintf(`up{job="%s"}`, service)
 	data, err := queryPrometheus(query)
 	if err != nil {
-		log.Printf("⚠️ Failed to get uptime for %s, using fallback", service)
-		return 99.8
+		log.Printf("⚠️ Failed to get uptime for %s, data unavailable", service)
+		return 0.0 // Return 0 instead of hardcoded values
 	}
 	result := parsePrometheusValue(data) * 100
 	if result == 0 {
-		return 99.8
+		return 0.0 // Return 0 instead of hardcoded values
 	}
 	return result
 }
@@ -934,13 +925,8 @@ func getPeakLoginHours() []HourlyStats {
 			}
 		}
 	}
-	
-	// Fallback data
-	return []HourlyStats{
-		{Hour: 9, Count: 45},
-		{Hour: 10, Count: 32},
-		{Hour: 14, Count: 35},
-	}
+		// Return empty array instead of hardcoded fallback data
+	return []HourlyStats{}
 }
 
 func getWeeklyLoginPattern() []DailyStats {
@@ -980,12 +966,8 @@ func getWeeklyLoginPattern() []DailyStats {
 			}
 		}
 	}
-	
-	return []DailyStats{
-		{Day: "Monday", Count: 245},
-		{Day: "Tuesday", Count: 220},
-		{Day: "Wednesday", Count: 235},
-	}
+		// Return empty array instead of hardcoded fallback data
+	return []DailyStats{}
 }
 
 func getGeoLoginSpread() []GeoStats {
@@ -1018,11 +1000,8 @@ func getGeoLoginSpread() []GeoStats {
 			}
 		}
 	}
-	
-	return []GeoStats{
-		{Country: "Italy", LoginCount: 1150},
-		{Country: "Germany", LoginCount: 87},
-	}
+		// Return empty array instead of hardcoded fallback data
+	return []GeoStats{}
 }
 
 func getQRScans24h() MockDataValue {
@@ -1042,41 +1021,30 @@ func getQRScans24h() MockDataValue {
 	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
-// Analytics helper functions with simple fallbacks
+// Analytics helper functions with empty arrays instead of hardcoded data
 func getQRScansPerHour() []HourlyStats {
-	return []HourlyStats{
-		{Hour: 8, Count: 12},
-		{Hour: 9, Count: 25},
-		{Hour: 17, Count: 22},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []HourlyStats{}
 }
 
 func getTopScanLocations() []LocationStats {
-	return []LocationStats{
-		{Location: "Main Entrance", Count: 145},
-		{Location: "Conference Room A", Count: 87},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []LocationStats{}
 }
 
 func getMostActiveUsers() []UserActivity {
-	return []UserActivity{
-		{UserID: "user_001", Username: "john.doe", ActivityCount: 145, LastActive: "2 minutes ago"},
-		{UserID: "user_002", Username: "jane.smith", ActivityCount: 132, LastActive: "5 minutes ago"},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []UserActivity{}
 }
 
 func getActivityByTimeSlot() []TimeSlotActivity {
-	return []TimeSlotActivity{
-		{TimeSlot: "08:00-10:00", Users: 45, Actions: 234},
-		{TimeSlot: "14:00-16:00", Users: 56, Actions: 289},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []TimeSlotActivity{}
 }
 
 func getFeatureUsage() []FeatureUsageStats {
-	return []FeatureUsageStats{
-		{Feature: "QR Scanning", UsageCount: 1245, Percentage: 35.2},
-		{Feature: "User Profile", UsageCount: 987, Percentage: 27.9},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []FeatureUsageStats{}
 }
 
 func getAttendanceEvents24h() MockDataValue {
@@ -1084,28 +1052,23 @@ func getAttendanceEvents24h() MockDataValue {
 }
 
 func getPeakAttendanceHours() []HourlyStats {
-	return []HourlyStats{
-		{Hour: 8, Count: 145},
-		{Hour: 17, Count: 189},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []HourlyStats{}
 }
 
 func getDepartmentStats() []DeptStats {
-	return []DeptStats{
-		{Department: "Engineering", AttendanceRate: 94.2, TotalEmployees: 45},
-		{Department: "Marketing", AttendanceRate: 87.8, TotalEmployees: 23},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []DeptStats{}
 }
 
 func getAPIRequests24h() int {
-	return 2847 // Fallback
+	// Return 0 instead of hardcoded fallback
+	return 0
 }
 
 func getTopEndpoints() []EndpointStats {
-	return []EndpointStats{
-		{Endpoint: "/api/auth/login", RequestCount: 1234, AvgResponse: 245.6},
-		{Endpoint: "/api/qr/scan", RequestCount: 987, AvgResponse: 156.3},
-	}
+	// Return empty array instead of hardcoded fallback data
+	return []EndpointStats{}
 }
 
 func getAPIResponseTimes() []APIResponseStats {
