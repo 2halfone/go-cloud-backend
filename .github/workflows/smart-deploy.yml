@@ -9,6 +9,9 @@ on:
       - 'gateway/**'
       - 'monitoring/**'
       - 'docker-compose.prod.yml'
+      - '.github/workflows/**'
+      - 'Makefile'
+      - 'scripts/**'
 
 jobs:
   detect-changes:
@@ -19,6 +22,7 @@ jobs:
       gateway-changed: ${{ steps.changes.outputs.gateway }}
       monitoring-changed: ${{ steps.changes.outputs.monitoring }}
       docker-changed: ${{ steps.changes.outputs.docker }}
+      config-changed: ${{ steps.changes.outputs.config }}
     steps:
       - uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
@@ -36,6 +40,10 @@ jobs:
             docker:
               - 'docker-compose.prod.yml'
               - 'nginx/**'
+            config:
+              - '.github/workflows/**'
+              - 'Makefile'
+              - 'scripts/**'
 
   deploy-auth-service:
     needs: detect-changes
@@ -56,7 +64,7 @@ jobs:
             docker-compose build auth-service
             
             # Restart only auth-service (zero downtime per altri servizi)
-            docker-compose up -d auth-service
+            docker-compose up -d --no-deps auth-service
             
             # Health check
             sleep 5
@@ -83,7 +91,7 @@ jobs:
             docker-compose build user-service
             
             # Restart only user-service
-            docker-compose up -d user-service
+            docker-compose up -d --no-deps user-service
             
             # Health check
             sleep 5
@@ -110,7 +118,7 @@ jobs:
             docker-compose build gateway
             
             # Restart only gateway
-            docker-compose up -d gateway
+            docker-compose up -d --no-deps gateway
             
             # Health check
             sleep 5
@@ -137,9 +145,27 @@ jobs:
             docker-compose build dashboard-api prometheus-service
             
             # Restart only monitoring
-            docker-compose up -d dashboard-api prometheus-service
+            docker-compose up -d --no-deps dashboard-api prometheus-service
             
             echo "✅ Monitoring deployed successfully!"
+
+  config-update:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.config-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📝 Config Files Updated
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            echo "✅ Configuration files updated successfully!"
+            echo "ℹ️ Makefile, workflows, and scripts are now up to date"
 
   full-deploy:
     needs: detect-changes

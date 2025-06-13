@@ -1,5 +1,8 @@
 package main
 
+// 🚀 SMART DEPLOY TEST: This change should trigger only auth-service deployment
+// Testing modular pipeline - other services should stay UP with zero downtime
+
 import (
     "auth-service/database"
     "auth-service/models"
