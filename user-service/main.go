@@ -1107,7 +1107,7 @@ func main() {
     app.Use("/qr/admin", adminOnly)
     app.Post("/qr/admin/generate", generateQRHandler)
     app.Get("/qr/admin/events", getQRListHandler)
-    app.Get("/qr/admin/events/:event_id/attendance", getEventAttendanceHandler)
+    app.Get("/qr/admin/events/:event_id/attendance", getEventUsersHandler) // FIXED: Use new handler that reads dynamic tables
     app.Get("/qr/admin/events/:event_id/users", getEventUsersHandler)
     app.Delete("/qr/admin/events/:event_id", deleteEventHandler)
     
