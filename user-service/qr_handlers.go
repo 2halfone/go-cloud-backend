@@ -366,7 +366,11 @@ func getTodayAttendanceHandler(c *fiber.Ctx) error {
 
 // ORIGINAL: Handler per presenze di un evento (admin only) - Legacy compatibility
 func getEventAttendanceHandler(c *fiber.Ctx) error {
+    log.Printf("⚠️  LEGACY DEBUG: getEventAttendanceHandler called - THIS SHOULD NOT BE USED!")
+    
     eventID := c.Params("event_id")
+    log.Printf("⚠️  LEGACY DEBUG: Legacy handler called with event_id: %s", eventID)
+    
     if eventID == "" {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Event ID is required",
@@ -386,6 +390,8 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
             "error": "Admin access required",
         })
     }
+    
+    log.Printf("⚠️  LEGACY DEBUG: Using legacy handler - redirecting to new handler logic")
     
     tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
     
@@ -419,6 +425,8 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
         FROM %s 
         ORDER BY attendance_time ASC
     `, tableName)
+    
+    log.Printf("⚠️  LEGACY DEBUG: Executing legacy query on table %s", tableName)
     
     rows, err := database.DB.Query(query)
     if err != nil {
@@ -460,6 +468,8 @@ func getEventAttendanceHandler(c *fiber.Ctx) error {
         
         attendances = append(attendances, record)
     }
+    
+    log.Printf("⚠️  LEGACY DEBUG: Legacy handler returning %d attendance records", len(attendances))
     
     // Get event details
     var eventName string
@@ -535,7 +545,10 @@ func getQRListHandler(c *fiber.Ctx) error {
 // NEW: Handler per ottenere tutti gli utenti di un evento con status (admin only)
 func getEventUsersHandler(c *fiber.Ctx) error {
     eventID := c.Params("event_id")
+    log.Printf("🔍 DEBUG: getEventUsersHandler called with event_id: %s", eventID)
+    
     if eventID == "" {
+        log.Printf("❌ DEBUG: Missing event_id parameter")
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Event ID is required",
         })
@@ -544,18 +557,23 @@ func getEventUsersHandler(c *fiber.Ctx) error {
     // Verify admin role
     _, _, _, role, err := getUserFromJWT(c)
     if err != nil {
+        log.Printf("❌ DEBUG: JWT authentication failed: %v", err)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Authentication error",
         })
     }
     
     if role != "admin" {
+        log.Printf("❌ DEBUG: Access denied for non-admin user with role: %s", role)
         return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
             "error": "Admin access required",
         })
     }
     
+    log.Printf("✅ DEBUG: Admin access granted, proceeding with event data retrieval")
+    
     tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    log.Printf("🗄️  DEBUG: Looking for table: %s", tableName)
     
     // Check if table exists
     var tableExists bool
@@ -567,17 +585,22 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         )`
     err = database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
     if err != nil {
+        log.Printf("❌ DEBUG: Database error checking table existence: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Database error",
         })
     }
     
     if !tableExists {
+        log.Printf("❌ DEBUG: Table %s does not exist", tableName)
         return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
             "error": "Event not found",
         })
     }
-      // Get all users with their status (using enhanced schema with null safety)
+    
+    log.Printf("✅ DEBUG: Table %s exists, querying users", tableName)
+      
+    // Get all users with their status (using enhanced schema with null safety)
     query := fmt.Sprintf(`
         SELECT user_id, name, surname, COALESCE(status, 'not_registered') as status, 
                scanned_at, updated_at, updated_by
@@ -585,15 +608,19 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         ORDER BY surname ASC, name ASC
     `, tableName)
     
+    log.Printf("🔍 DEBUG: Executing query: %s", query)
+    
     rows, err := database.DB.Query(query)
     if err != nil {
-        log.Printf("Error querying event users: %v", err)
+        log.Printf("❌ DEBUG: Error querying event users: %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Error fetching event users",
         })
     }
     defer rows.Close()
-      var users []map[string]interface{}
+      
+    var users []map[string]interface{}
+    userCount := 0
     for rows.Next() {
         var userID, updatedBy sql.NullInt64
         var name, surname, status string
@@ -601,13 +628,13 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         
         err := rows.Scan(&userID, &name, &surname, &status, &scannedAt, &updatedAt, &updatedBy)
         if err != nil {
-            log.Printf("Error scanning user record: %v", err)
+            log.Printf("❌ DEBUG: Error scanning user record: %v", err)
             continue
         }
         
         // Ensure userID is valid
         if !userID.Valid {
-            log.Printf("Invalid user_id found, skipping record")
+            log.Printf("⚠️  DEBUG: Invalid user_id found, skipping record")
             continue
         }
         
@@ -615,7 +642,8 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         if status == "" {
             status = "not_registered"
         }
-          user := map[string]interface{}{
+          
+        user := map[string]interface{}{
             "user_id":    int(userID.Int64), // Cast to int for Flutter compatibility
             "name":       name,
             "surname":    surname,
@@ -640,7 +668,16 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         }
         
         users = append(users, user)
+        userCount++
     }
+    
+    log.Printf("📊 DEBUG: Retrieved %d users from table %s", userCount, tableName)
+    log.Printf("📋 DEBUG: First few users: %+v", func() []map[string]interface{} {
+        if len(users) > 3 {
+            return users[:3]
+        }
+        return users
+    }())
     
     // Get event details
     var eventName string
@@ -648,21 +685,26 @@ func getEventUsersHandler(c *fiber.Ctx) error {
     eventQuery := `SELECT event_name, date FROM attendance_events WHERE event_id = $1`
     err = database.DB.QueryRow(eventQuery, eventID).Scan(&eventName, &eventDate)
     if err != nil {
-        log.Printf("Error getting event details: %v", err)
+        log.Printf("⚠️  DEBUG: Error getting event details: %v", err)
         eventName = "Unknown Event"
     }
     
     // Calculate statistics
     stats := calculateEventStats(users)
     
-    return c.JSON(fiber.Map{
+    response := fiber.Map{
         "event_id":    eventID,
         "event_name":  eventName,
         "event_date":  eventDate.Format("2006-01-02"),
         "users":       users,
         "total_users": len(users),
         "statistics":  stats,
-    })
+    }
+    
+    log.Printf("🎯 DEBUG: Returning response with %d users, event: %s", len(users), eventName)
+    log.Printf("📊 DEBUG: Response summary: total_users=%d, event_id=%s", len(users), eventID)
+    
+    return c.JSON(response)
 }
 
 // Handler per cancellare un evento (admin only)

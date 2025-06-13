@@ -1105,10 +1105,26 @@ func main() {
         ErrorHandler: jwtError,
     }))    // QR Attendance System - Admin endpoints (protetti da JWT + adminOnly)
     app.Use("/qr/admin", adminOnly)
+    
+    // Add detailed logging for QR endpoints
+    app.Use("/qr/admin/events/:event_id/*", func(c *fiber.Ctx) error {
+        eventID := c.Params("event_id")
+        endpoint := c.Path()
+        method := c.Method()
+        log.Printf("🔍 QR_ENDPOINT_DEBUG: %s %s (event_id: %s)", method, endpoint, eventID)
+        return c.Next()
+    })
+    
     app.Post("/qr/admin/generate", generateQRHandler)
     app.Get("/qr/admin/events", getQRListHandler)
-    app.Get("/qr/admin/events/:event_id/attendance", getEventUsersHandler) // FIXED: Use new handler that reads dynamic tables
-    app.Get("/qr/admin/events/:event_id/users", getEventUsersHandler)
+    app.Get("/qr/admin/events/:event_id/attendance", func(c *fiber.Ctx) error {
+        log.Printf("🎯 ROUTE_DEBUG: /attendance endpoint called - using getEventUsersHandler")
+        return getEventUsersHandler(c)
+    })
+    app.Get("/qr/admin/events/:event_id/users", func(c *fiber.Ctx) error {
+        log.Printf("🎯 ROUTE_DEBUG: /users endpoint called - using getEventUsersHandler") 
+        return getEventUsersHandler(c)
+    })
     app.Delete("/qr/admin/events/:event_id", deleteEventHandler)
     
     // QR Attendance System - User endpoints (protetti da JWT)
