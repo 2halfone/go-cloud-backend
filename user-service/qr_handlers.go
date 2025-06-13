@@ -102,8 +102,7 @@ func generateQRHandler(c *fiber.Ctx) error {
         INSERT INTO attendance_events (event_id, event_name, date, qr_jwt, expires_at, created_by)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id`
-    
-    var newEventID int
+      var newEventID int
     err = database.DB.QueryRow(insertQuery, eventID, req.EventName, dateTime, qrJWT, expiresAt, userID).Scan(&newEventID)
     if err != nil {
         log.Printf("Error creating attendance event: %v", err)
@@ -111,13 +110,16 @@ func generateQRHandler(c *fiber.Ctx) error {
             "error": "Errore salvataggio evento",
         })
     }
-      log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
     
-    // Create dynamic attendance table for this event
-    err = createAttendanceTable(eventID)
+    log.Printf("generateQRHandler: Event created successfully with ID: %d, event_id: %s", newEventID, eventID)
+    
+    // Create EMPTY attendance table for selective QR-only system
+    err = createAttendanceTableEmpty(eventID)
     if err != nil {
-        log.Printf("generateQRHandler: Warning - failed to create attendance table: %v", err)
+        log.Printf("generateQRHandler: Warning - failed to create empty attendance table: %v", err)
         // Don't fail the request, just log the warning
+    } else {
+        log.Printf("generateQRHandler: ✅ Created EMPTY table for selective QR-only participation")
     }
     
     // Record QR event creation metric
@@ -205,10 +207,9 @@ func scanQRHandler(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore sincronizzazione utente",
             "details": err.Error(),
-        })    }
-        // Registra presenza nella tabella dinamica dell'evento
+        })    }        // Registra presenza nella tabella dinamica dell'evento con sistema selettivo
     tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
-    err = insertAttendanceRecord(tableName, userID, name, surname)
+    err = insertAttendanceRecordOnScan(tableName, userID, name, surname)
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         // Record failed QR scan metric
@@ -597,18 +598,18 @@ func getEventUsersHandler(c *fiber.Ctx) error {
             "error": "Event not found",
         })
     }
-    
-    log.Printf("✅ DEBUG: Table %s exists, querying users", tableName)
+      log.Printf("✅ DEBUG: Table %s exists, querying ONLY users who scanned QR", tableName)
       
-    // Get all users with their status (using enhanced schema with null safety)
+    // Get ONLY users who have actually scanned QR codes (selective system)
     query := fmt.Sprintf(`
-        SELECT user_id, name, surname, COALESCE(status, 'not_registered') as status, 
+        SELECT user_id, name, surname, COALESCE(status, 'present') as status, 
                scanned_at, updated_at, updated_by
         FROM %s 
-        ORDER BY surname ASC, name ASC
+        WHERE scanned_at IS NOT NULL
+        ORDER BY scanned_at DESC, surname ASC, name ASC
     `, tableName)
     
-    log.Printf("🔍 DEBUG: Executing query: %s", query)
+    log.Printf("🔍 DEBUG: Executing SELECTIVE query: %s", query)
     
     rows, err := database.DB.Query(query)
     if err != nil {
@@ -670,9 +671,8 @@ func getEventUsersHandler(c *fiber.Ctx) error {
         users = append(users, user)
         userCount++
     }
-    
-    log.Printf("📊 DEBUG: Retrieved %d users from table %s", userCount, tableName)
-    log.Printf("📋 DEBUG: First few users: %+v", func() []map[string]interface{} {
+      log.Printf("📊 DEBUG: Retrieved %d QR SCANNERS from table %s (selective system)", userCount, tableName)
+    log.Printf("📋 DEBUG: First few QR scanners: %+v", func() []map[string]interface{} {
         if len(users) > 3 {
             return users[:3]
         }
@@ -691,18 +691,18 @@ func getEventUsersHandler(c *fiber.Ctx) error {
     
     // Calculate statistics
     stats := calculateEventStats(users)
-    
-    response := fiber.Map{
-        "event_id":    eventID,
-        "event_name":  eventName,
-        "event_date":  eventDate.Format("2006-01-02"),
-        "users":       users,
-        "total_users": len(users),
-        "statistics":  stats,
+      response := fiber.Map{
+        "event_id":      eventID,
+        "event_name":    eventName,
+        "event_date":    eventDate.Format("2006-01-02"),
+        "users":         users,
+        "qr_scanners":   len(users), // Only QR scanners in selective system
+        "total_users":   len(users), // For backward compatibility
+        "statistics":    stats,
+        "system_type":   "selective_qr_only",
     }
-    
-    log.Printf("🎯 DEBUG: Returning response with %d users, event: %s", len(users), eventName)
-    log.Printf("📊 DEBUG: Response summary: total_users=%d, event_id=%s", len(users), eventID)
+      log.Printf("🎯 DEBUG: Returning response with %d QR SCANNERS (selective system), event: %s", len(users), eventName)
+    log.Printf("📊 DEBUG: Selective system summary: qr_scanners=%d, event_id=%s", len(users), eventID)
     
     return c.JSON(response)
 }

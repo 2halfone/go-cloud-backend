@@ -11,6 +11,8 @@ import (
     "sync"
     "time"
     "user-service/database"
+    "user-service/models"
+    "user-service/utils"
 
     "github.com/gofiber/fiber/v2"
     "github.com/gofiber/fiber/v2/middleware/cors"
@@ -401,7 +403,7 @@ func syncUserFromAuthService(userID int) error {
         return fmt.Errorf("failed to insert user into user-service: %v", err)
     }
     
-    log.Printf("✅ Successfully synced user %d (%s %s) from auth-service to user-service", 
+    log.Printf("✅ Successfully synced user %d (%s %s) from auth-service to user-service",
         authUser.ID, authUser.Name, authUser.Surname)
     return nil
 }
@@ -421,411 +423,9 @@ func ensureUserExists(userID int) error {
     return nil
 }
 
-func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
-    user := c.Locals("user")
-    if user == nil {
-        log.Printf("getUserFromJWT: No user found in context")
-        return 0, "", "", "", fmt.Errorf("nessun utente nel contesto JWT")
-    }
-    
-    token, ok := user.(*jwt.Token)
-    if !ok {
-        log.Printf("getUserFromJWT: User context is not a JWT token")
-        return 0, "", "", "", fmt.Errorf("formato token non valido")
-    }
-    
-    claims := token.Claims.(jwt.MapClaims)
-    log.Printf("getUserFromJWT: JWT claims: %+v", claims)
-    
-    userIDFloat, ok := claims["user_id"].(float64)
-    if !ok {
-        log.Printf("getUserFromJWT: user_id not found in claims or wrong type")
-        return 0, "", "", "", fmt.Errorf("user_id non trovato nel token")
-    }
-    userID := int(userIDFloat)
-      // Estrai il ruolo dal JWT invece del database
-    role, ok := claims["role"].(string)
-    if !ok {
-        log.Printf("getUserFromJWT: role not found in JWT claims, defaulting to 'user'")
-        role = "user"
-    }
-    
-    // Estrai name e surname dal JWT invece del database
-    name, ok := claims["name"].(string)
-    if !ok {
-        log.Printf("getUserFromJWT: name not found in JWT claims")
-        name = "Unknown"
-    }
-    
-    surname, ok := claims["surname"].(string)
-    if !ok {
-        log.Printf("getUserFromJWT: surname not found in JWT claims")
-        surname = "User"
-    }
-    
-    log.Printf("getUserFromJWT: Successfully extracted from JWT - userID=%d, name='%s', surname='%s', role='%s'", userID, name, surname, role)
-    
-    return userID, name, surname, role, nil
-}
-
-// Create dynamic attendance table for each event with enhanced status management
-func createAttendanceTable(eventID string) error {
-    // Sanitize table name (replace hyphens with underscores, ensure valid SQL identifier)
-    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
-    
-    // Create table with enhanced structure for status management
-    createTableQuery := fmt.Sprintf(`
-        CREATE TABLE IF NOT EXISTS %s (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            name VARCHAR(255) NOT NULL,
-            surname VARCHAR(255) NOT NULL,
-            scanned_at TIMESTAMPTZ,
-            timestamp TIMESTAMP NULL,
-            status VARCHAR(50) DEFAULT 'not_registered' CHECK (status IN ('present', 'hospital', 'family', 'emergency', 'vacancy', 'personal', 'not_registered')),
-            motivazione TEXT,
-            updated_by INTEGER REFERENCES users(id),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id)
-        )`, tableName)
-    
-    _, err := database.DB.Exec(createTableQuery)
-    if err != nil {
-        return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
-    }    // DISABLED: Do not use automated setup that installs problematic triggers
-    // setupSQL := "SELECT setup_new_attendance_table($1)"
-    log.Printf("Skipping automated trigger setup to avoid auto-present issue for table %s", tableName)
-    
-    // Manual setup WITHOUT problematic triggers
-    log.Printf("Setting up table %s without auto-present triggers", tableName)
-      // Manual setup WITHOUT problematic triggers
-    log.Printf("Setting up table %s without auto-present triggers", tableName)
-        
-        // Manual index creation (keep the indexes, just skip the problematic trigger)
-        indexQueries := []string{
-            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
-            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
-            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
-            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
-            fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_scanned_at ON %s(scanned_at)", tableName, tableName),
-        }
-        
-        for _, indexQuery := range indexQueries {
-            if _, err := database.DB.Exec(indexQuery); err != nil {
-                log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
-            }
-        }
-        
-        // Manual user population
-        if err := populateEventUsers(tableName); err != nil {
-            log.Printf("Warning: failed to populate users for table %s: %v", tableName, err)
-        }
-
-    log.Printf("✅ Created attendance table: %s with enhanced status management", tableName)
-    return nil
-}
-
-// Populate all active users into event table with default status
-func populateEventUsers(tableName string) error {
-    // Get all authenticated users (not filtering by status)
-    query := `SELECT id, name, last_name FROM users ORDER BY name, last_name`
-    rows, err := database.DB.Query(query)
-    if err != nil {
-        return fmt.Errorf("failed to query users: %v", err)
-    }
-    defer rows.Close()
-    
-    userCount := 0
-    for rows.Next() {
-        var userID int
-        var name, lastName string
-        
-        err := rows.Scan(&userID, &name, &lastName)
-        if err != nil {
-            log.Printf("Error scanning user: %v", err)
-            continue
-        }
-        
-        // Insert user with default status 'not_registered'
-        insertQuery := fmt.Sprintf(`
-            INSERT INTO %s (user_id, name, surname, status, timestamp, updated_at) 
-            VALUES ($1, $2, $3, $4, NULL, NOW()) 
-            ON CONFLICT (user_id) DO NOTHING`, tableName)
-        
-        _, err = database.DB.Exec(insertQuery, userID, name, lastName, "not_registered")
-        if err != nil {
-            log.Printf("Error inserting user %d into %s: %v", userID, tableName, err)
-            continue
-        }
-        
-        userCount++
-    }
-    
-    log.Printf("✅ Populated %d users in event table %s", userCount, tableName)
-    return nil
-}
-
-// Check if user has scanned for a specific event (using dynamic table)
-func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
-    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
-    
-    // Check if table exists first
-    var tableExists bool
-    checkTableQuery := `
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = $1
-        )`
-    err := database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
-    if err != nil {
-        return false, err
-    }
-    
-    if !tableExists {
-        // Table doesn't exist, so user hasn't scanned
-        return false, nil
-    }
-    
-    // Check if user has actually SCANNED (scanned_at IS NOT NULL) for this event
-    var count int
-    query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = $1 AND scanned_at IS NOT NULL", tableName)
-    err = database.DB.QueryRow(query, userID).Scan(&count)
-    if err != nil {
-        return false, err
-    }
-    
-    return count > 0, nil
-}
-
-// Insert or update attendance record for QR scan with automatic "present" status
-func insertAttendanceRecord(tableName string, userID int, userName, userSurname string) error {
-    // Check if user already exists in this event
-    checkSQL := fmt.Sprintf("SELECT id FROM %s WHERE user_id = $1", tableName)
-    var existingID int
-    err := database.DB.QueryRow(checkSQL, userID).Scan(&existingID)
-    
-    if err == sql.ErrNoRows {
-        // User doesn't exist, insert new record with automatic "present" status
-        insertSQL := fmt.Sprintf(`
-            INSERT INTO %s (user_id, name, surname, scanned_at, status, updated_at) 
-            VALUES ($1, $2, $3, NOW(), 'present', NOW())`, tableName)
-        
-        if _, err := database.DB.Exec(insertSQL, userID, userName, userSurname); err != nil {
-            return fmt.Errorf("failed to insert attendance record: %v", err)
-        }
-        
-        log.Printf("✅ Inserted new attendance record for user %d with automatic 'present' status", userID)
-    } else if err == nil {
-        // User exists, update scanned_at timestamp and set status to "present"
-        updateSQL := fmt.Sprintf(`
-            UPDATE %s 
-            SET scanned_at = NOW(), status = 'present', updated_at = NOW()
-            WHERE user_id = $1`, tableName)
-        
-        if _, err := database.DB.Exec(updateSQL, userID); err != nil {
-            return fmt.Errorf("failed to update attendance record: %v", err)
-        }
-        
-        log.Printf("✅ Updated scan time for user %d and automatically set status to 'present'", userID)
-    } else {
-        return fmt.Errorf("failed to check existing attendance: %v", err)
-    }
-    
-    return nil
-}
-
-func hasUserScannedEvent(userID int, eventID string) (bool, error) {
-    var count int
-    query := `SELECT COUNT(*) FROM attendance WHERE user_id = $1 AND event_id = $2 AND timestamp IS NOT NULL`
-    err := database.DB.QueryRow(query, userID, eventID).Scan(&count)
-    return count > 0, err
-}
-
-func generateQRImage(content string) (string, error) {
-    // Genera QR code come base64
-    qr, err := qrcode.Encode(content, qrcode.Medium, 256)
-    if err != nil {
-        return "", err
-    }
-    
-    return base64.StdEncoding.EncodeToString(qr), nil
-}
-
-// Middleware per verificare ruolo admin
-func adminOnly(c *fiber.Ctx) error {
-    log.Printf("AdminOnly middleware: Processing request to %s", c.Path())
-    
-    // Verifica che il JWT sia presente
-    user := c.Locals("user")
-    if user == nil {
-        log.Printf("AdminOnly middleware: No JWT user found in context")
-        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-            "error": "Token JWT mancante o non valido",
-        })
-    }
-    
-    userID, name, surname, role, err := getUserFromJWT(c)
-    if err != nil {
-        log.Printf("AdminOnly middleware: Error getting user from JWT: %v", err)
-        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-            "error": "Errore autenticazione",
-        })
-    }
-    
-    log.Printf("AdminOnly middleware: User %d (%s %s) with role '%s' accessing %s", 
-        userID, name, surname, role, c.Path())
-    
-    if role != "admin" {
-        log.Printf("AdminOnly middleware: Access denied for user %d with role '%s'", userID, role)
-        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-            "error": "Accesso negato: richiesti privilegi admin",
-            "user_role": role,
-            "required_role": "admin",
-        })
-    }
-    
-    log.Printf("AdminOnly middleware: Admin access granted for user %d", userID)
-    return c.Next()
-}
-type UserRequest struct {
-    Name     string `json:"name"`
-    LastName string `json:"last_name"`
-    Status   string `json:"status"`
-}
-
-// Response structures
-type QRGenerateResponse struct {
-    EventID     string    `json:"event_id"`
-    EventName   string    `json:"event_name"`
-    Date        string    `json:"date"`
-    QRImage     string    `json:"qr_image"`
-    ExpiresAt   time.Time `json:"expires_at"`
-    CreatedAt   time.Time `json:"created_at"`
-}
-
-type AttendanceResponse struct {
-    Message   string    `json:"message"`
-    EventID   string    `json:"event_id"`
-    EventName string    `json:"event_name"`
-    Status    string    `json:"status"`
-    Timestamp time.Time `json:"timestamp"`
-}
-
-// Response per lista utenti con paginazione
-type UsersResponse struct {
-    Users []User `json:"users"`
-    Total int    `json:"total"`
-    Page  int    `json:"page"`
-    Limit int    `json:"limit"`
-}
-
-// Handler per GET /users - Lista utenti con paginazione
-func getUsersHandler(c *fiber.Ctx) error {
-    // Parametri di paginazione
-    page := c.QueryInt("page", 1)
-    limit := c.QueryInt("limit", 10)
-    status := c.Query("status", "") // Filtro per status
-    
-    if page < 1 {
-        page = 1
-    }
-    if limit < 1 || limit > 100 {
-        limit = 10
-    }
-    
-    offset := (page - 1) * limit
-    
-    // Query base e conteggio
-    var query, countQuery string
-    var args, countArgs []interface{}
-      // Costruisci query in base ai filtri
-    if status != "" {
-        query = `SELECT id, name, last_name, status, created_at FROM users WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
-        countQuery = `SELECT COUNT(*) FROM users WHERE status = $1`
-        args = []interface{}{status, limit, offset}
-        countArgs = []interface{}{status}
-    } else {
-        query = `SELECT id, name, last_name, status, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`
-        countQuery = `SELECT COUNT(*) FROM users`
-        args = []interface{}{limit, offset}
-        countArgs = []interface{}{}
-    }
-    
-    // Esegui query per gli utenti
-    rows, err := database.DB.Query(query, args...)
-    if err != nil {
-        log.Printf("Error querying users: %v", err)
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Errore nel recuperare gli utenti",
-        })
-    }
-    defer rows.Close()
-      var users []User
-    for rows.Next() {
-        var user User
-        err := rows.Scan(&user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt)
-        if err != nil {
-            log.Printf("Error scanning user: %v", err)
-            continue
-        }
-        users = append(users, user)
-    }
-    
-    // Conta totale utenti
-    var total int
-    if len(countArgs) > 0 {
-        err = database.DB.QueryRow(countQuery, countArgs...).Scan(&total)
-    } else {
-        err = database.DB.QueryRow(countQuery).Scan(&total)
-    }
-    if err != nil {
-        log.Printf("Error counting users: %v", err)
-        total = len(users)
-    }
-    
-    return c.JSON(UsersResponse{
-        Users: users,
-        Total: total,
-        Page:  page,
-        Limit: limit,
-    })
-}
-
-// Handler per GET /users/:id - Dettagli utente specifico
-func getUserByIDHandler(c *fiber.Ctx) error {
-    id, err := strconv.Atoi(c.Params("id"))
-    if err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "error": "ID utente non valido",
-        })
-    }
-      query := `SELECT id, name, last_name, status, created_at FROM users WHERE id = $1`
-    var user User
-    
-    err = database.DB.QueryRow(query, id).Scan(
-        &user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt,
-    )
-    
-    if err != nil {
-        if err.Error() == "sql: no rows in result set" {
-            return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-                "error": "Utente non trovato",
-            })
-        }
-        log.Printf("Error querying user by ID: %v", err)
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-            "error": "Errore nel recuperare i dettagli dell'utente",
-        })
-    }
-    
-    return c.JSON(user)
-}
-
 // Handler per POST /users - Creazione di un nuovo utente
 func createUserHandler(c *fiber.Ctx) error {
-    var req UserRequest
+    var req models.UserRequest
     if err := c.BodyParser(&req); err != nil {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
@@ -865,8 +465,7 @@ func updateUserHandler(c *fiber.Ctx) error {
             "error": "ID utente non valido",
         })
     }
-    
-    var req UserRequest
+      var req models.UserRequest
     if err := c.BodyParser(&req); err != nil {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
             "error": "Payload non valido",
@@ -1144,4 +743,233 @@ func main() {
     
     log.Println("🚀 User Service completo avviato sulla porta 3002")
     log.Fatal(app.Listen(":3002"))
+}
+
+// Create empty attendance table for selective QR-only system
+func createAttendanceTableEmpty(eventID string) error {
+    // Sanitize table name (replace hyphens with underscores, ensure valid SQL identifier)
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Create table with enhanced structure for status management
+    createTableQuery := fmt.Sprintf(`
+        CREATE TABLE IF NOT EXISTS %s (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            surname VARCHAR(255) NOT NULL,
+            scanned_at TIMESTAMPTZ,
+            timestamp TIMESTAMP NULL,
+            status VARCHAR(50) DEFAULT 'present' CHECK (status IN ('present', 'hospital', 'family', 'emergency', 'vacancy', 'personal', 'not_registered')),
+            motivazione TEXT,
+            updated_by INTEGER REFERENCES users(id),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id)
+        )`, tableName)
+    
+    _, err := database.DB.Exec(createTableQuery)
+    if err != nil {
+        return fmt.Errorf("failed to create attendance table %s: %v", tableName, err)
+    }
+    
+    // Create indexes for performance
+    indexQueries := []string{
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_user_id ON %s(user_id)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_timestamp ON %s(timestamp)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_status ON %s(status)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_updated_at ON %s(updated_at)", tableName, tableName),
+        fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_scanned_at ON %s(scanned_at)", tableName, tableName),
+    }
+    
+    for _, indexQuery := range indexQueries {
+        if _, err := database.DB.Exec(indexQuery); err != nil {
+            log.Printf("Warning: failed to create index for table %s: %v", tableName, err)
+        }
+    }
+    
+    log.Printf("✅ Created EMPTY attendance table: %s for selective QR-only system", tableName)
+    return nil
+}
+
+// Insert attendance record ONLY when user scans QR code (selective system)
+func insertAttendanceRecordOnScan(tableName string, userID int, userName, userSurname string) error {
+    // Check if user already exists in this event
+    checkSQL := fmt.Sprintf("SELECT id, status FROM %s WHERE user_id = $1", tableName)
+    var existingID int
+    var currentStatus string
+    err := database.DB.QueryRow(checkSQL, userID).Scan(&existingID, &currentStatus)
+    
+    if err == sql.ErrNoRows {
+        // User doesn't exist, insert new record with automatic "present" status
+        insertSQL := fmt.Sprintf(`
+            INSERT INTO %s (user_id, name, surname, scanned_at, status, updated_at) 
+            VALUES ($1, $2, $3, NOW(), 'present', NOW())`, tableName)
+        
+        if _, err := database.DB.Exec(insertSQL, userID, userName, userSurname); err != nil {
+            return fmt.Errorf("failed to insert attendance record: %v", err)
+        }
+        
+        log.Printf("✅ NEW USER: Inserted attendance record for user %d (%s %s) with 'present' status", userID, userName, userSurname)
+    } else if err == nil {
+        // User exists, update scanned_at timestamp and preserve current status
+        updateSQL := fmt.Sprintf(`
+            UPDATE %s 
+            SET scanned_at = NOW(), updated_at = NOW()
+            WHERE user_id = $1`, tableName)
+        
+        if _, err := database.DB.Exec(updateSQL, userID); err != nil {
+            return fmt.Errorf("failed to update attendance record: %v", err)
+        }
+        
+        log.Printf("✅ RESCAN: Updated scan time for user %d (%s %s), preserved status '%s'", userID, userName, userSurname, currentStatus)
+    } else {
+        return fmt.Errorf("failed to check existing attendance: %v", err)
+    }
+    
+    return nil
+}
+
+// Wrapper functions for backward compatibility
+func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
+    return utils.GetUserFromJWT(c)
+}
+
+func generateQRImage(content string) (string, error) {
+    // Genera QR code come base64
+    qr, err := qrcode.Encode(content, qrcode.Medium, 256)
+    if err != nil {
+        return "", err
+    }
+    
+    return base64.StdEncoding.EncodeToString(qr), nil
+}
+
+func hasUserScannedEventDynamic(userID int, eventID string) (bool, error) {
+    tableName := "attendance_" + strings.ReplaceAll(eventID, "-", "_")
+    
+    // Check if table exists first
+    var tableExists bool
+    checkTableQuery := `
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = $1
+        )`
+    err := database.DB.QueryRow(checkTableQuery, tableName).Scan(&tableExists)
+    if err != nil {
+        return false, err
+    }
+    
+    if !tableExists {
+        // Table doesn't exist, so user hasn't scanned
+        return false, nil
+    }
+    
+    // Check if user has actually SCANNED (scanned_at IS NOT NULL) for this event
+    var count int
+    query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = $1 AND scanned_at IS NOT NULL", tableName)
+    err = database.DB.QueryRow(query, userID).Scan(&count)
+    if err != nil {
+        return false, err
+    }
+    
+    return count > 0, nil
+}
+
+func adminOnly(c *fiber.Ctx) error {
+    _, _, _, role, err := getUserFromJWT(c)
+    if err != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Authentication required",
+        })
+    }
+    
+    if role != "admin" {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+            "error": "Admin access required",
+        })
+    }
+    
+    return c.Next()
+}
+
+func getUsersHandler(c *fiber.Ctx) error {
+    // Parametri paginazione
+    page := c.QueryInt("page", 1)
+    limit := c.QueryInt("limit", 10)
+    if page < 1 {
+        page = 1
+    }
+    if limit < 1 || limit > 100 {
+        limit = 10
+    }
+    offset := (page - 1) * limit
+    
+    // Query utenti
+    query := `SELECT id, name, last_name, status, created_at FROM users ORDER BY name ASC LIMIT $1 OFFSET $2`
+    rows, err := database.DB.Query(query, limit, offset)
+    if err != nil {
+        log.Printf("Error querying users: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nel recuperare gli utenti",
+        })
+    }
+    defer rows.Close()
+    
+    var users []models.User
+    for rows.Next() {
+        var user models.User
+        err := rows.Scan(&user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt)
+        if err != nil {
+            log.Printf("Error scanning user: %v", err)
+            continue
+        }
+        users = append(users, user)
+    }
+    
+    // Conta totale
+    var total int
+    countQuery := `SELECT COUNT(*) FROM users`
+    err = database.DB.QueryRow(countQuery).Scan(&total)
+    if err != nil {
+        total = len(users)
+    }
+    
+    response := models.UsersResponse{
+        Users: users,
+        Total: total,
+        Page:  page,
+        Limit: limit,
+    }
+    
+    return c.JSON(response)
+}
+
+func getUserByIDHandler(c *fiber.Ctx) error {
+    id, err := strconv.Atoi(c.Params("id"))
+    if err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "ID non valido",
+        })
+    }
+    
+    var user models.User
+    query := `SELECT id, name, last_name, status, created_at FROM users WHERE id = $1`
+    err = database.DB.QueryRow(query, id).Scan(
+        &user.ID, &user.Name, &user.LastName, &user.Status, &user.CreatedAt,
+    )
+    
+    if err != nil {
+        if err.Error() == "sql: no rows in result set" {
+            return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+                "error": "Utente non trovato",
+            })
+        }
+        log.Printf("Error querying user by ID: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Errore nel recuperare i dettagli dell'utente",
+        })
+    }
+    
+    return c.JSON(user)
 }
