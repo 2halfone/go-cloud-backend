@@ -2,7 +2,7 @@
 Schema. dell'Applicazione Go Cloud Backend.
 
 graph TB.
-    %% Client Layer
+    %% Client Layer.
     Client[🌐 Client/Browser<br/>Frontend App].
     
     %% Load Balancer/Proxy Layer
