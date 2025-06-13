@@ -28,6 +28,34 @@ var (
 	userDB           *sql.DB
 )
 
+// 🟡 MOCK DATA HIGHLIGHTING SYSTEM - Empty Yellow Boxes
+type MockDataValue struct {
+	Value      interface{} `json:"value"`             // null when mock data
+	IsMock     bool        `json:"is_mock"`           // true for mock data
+	Display    string      `json:"display"`           // "empty_yellow" when mock
+	DataSource string      `json:"data_source"`       // "prometheus+database" or "fallback"
+}
+
+// Helper function to create EMPTY YELLOW BOX for mock data
+func createEmptyYellowBox() MockDataValue {
+	return MockDataValue{
+		Value:      nil,                    // ⚠️ NULL VALUE - Empty box
+		IsMock:     true,                   // 🟡 Mark as mock
+		Display:    "empty_yellow",         // 🟡 Yellow background indicator
+		DataSource: "fallback_unavailable", // Source indicator
+	}
+}
+
+// Helper function to create real data value
+func createRealDataValue(value interface{}) MockDataValue {
+	return MockDataValue{
+		Value:      value,                  // ✅ Real value
+		IsMock:     false,                  // ✅ Not mock
+		Display:    "normal",               // Normal display
+		DataSource: "prometheus+database",  // Real data source
+	}
+}
+
 // Step 1.2: Data Structures per i 3 gruppi
 type SecurityGroupData struct {
 	AuthenticationStats map[string]interface{} `json:"authentication_stats"`
@@ -128,17 +156,17 @@ type ServiceStatus struct {
 }
 
 type PerformanceMetrics struct {
-	AvgResponseTime   float64 `json:"avg_response_time_ms"`
-	RequestsPerSecond float64 `json:"requests_per_second"`
-	ErrorRate         float64 `json:"error_rate_percent"`
-	ThroughputMbps    float64 `json:"throughput_mbps"`
+	AvgResponseTime   MockDataValue `json:"avg_response_time_ms"`
+	RequestsPerSecond MockDataValue `json:"requests_per_second"`
+	ErrorRate         MockDataValue `json:"error_rate_percent"`
+	ThroughputMbps    MockDataValue `json:"throughput_mbps"`
 }
 
 type ResourceUsage struct {
-	CpuUsage      float64 `json:"cpu_usage_percent"`
-	MemoryUsage   float64 `json:"memory_usage_percent"`
-	DiskUsage     float64 `json:"disk_usage_percent"`
-	NetworkUsage  float64 `json:"network_usage_percent"`
+	CpuUsage      MockDataValue `json:"cpu_usage_percent"`
+	MemoryUsage   MockDataValue `json:"memory_usage_percent"`
+	DiskUsage     MockDataValue `json:"disk_usage_percent"`
+	NetworkUsage  MockDataValue `json:"network_usage_percent"`
 }
 
 // SICUREZZA - Security Metrics
@@ -150,10 +178,10 @@ type SecurityMetricsData struct {
 }
 
 type AuthStats struct {
-	SuccessfulLogins24h int     `json:"successful_logins_24h"`
-	FailedAttempts24h   int     `json:"failed_attempts_24h"`
-	SuccessRate         float64 `json:"success_rate_percent"`
-	SuspiciousActivity  int     `json:"suspicious_activity_count"`
+	SuccessfulLogins24h MockDataValue `json:"successful_logins_24h"`
+	FailedAttempts24h   MockDataValue `json:"failed_attempts_24h"`
+	SuccessRate         MockDataValue `json:"success_rate_percent"`
+	SuspiciousActivity  MockDataValue `json:"suspicious_activity_count"`
 }
 
 type SecurityAlert struct {
@@ -166,20 +194,20 @@ type SecurityAlert struct {
 }
 
 type ActiveSessionsData struct {
-	TotalActive      int                    `json:"total_active"`
-	SessionsByDevice []DeviceSessionCount   `json:"sessions_by_device"`
+	TotalActive      MockDataValue            `json:"total_active"`
+	SessionsByDevice []DeviceSessionCount     `json:"sessions_by_device"`
 	SessionsByLocation []LocationSessionCount `json:"sessions_by_location"`
 }
 
 type DeviceSessionCount struct {
-	DeviceType string `json:"device_type"`
-	Count      int    `json:"count"`
+	DeviceType string        `json:"device_type"`
+	Count      MockDataValue `json:"count"`
 }
 
 type LocationSessionCount struct {
-	Country string `json:"country"`
-	City    string `json:"city"`
-	Count   int    `json:"count"`
+	Country string        `json:"country"`
+	City    string        `json:"city"`
+	Count   MockDataValue `json:"count"`
 }
 
 type LoginPatternsData struct {
@@ -213,11 +241,11 @@ type AnalyticsData struct {
 }
 
 type QRAnalyticsData struct {
-	TotalScans24h     int               `json:"total_scans_24h"`
+	TotalScans24h     MockDataValue     `json:"total_scans_24h"`
 	ScansPerHour      []HourlyStats     `json:"scans_per_hour"`
 	TopScanLocations  []LocationStats   `json:"top_scan_locations"`
-	ScanSuccessRate   float64           `json:"scan_success_rate"`
-	AverageScanTime   float64           `json:"average_scan_time_ms"`
+	ScanSuccessRate   MockDataValue     `json:"scan_success_rate"`
+	AverageScanTime   MockDataValue     `json:"average_scan_time_ms"`
 }
 
 type LocationStats struct {
@@ -251,8 +279,8 @@ type FeatureUsageStats struct {
 }
 
 type AttendanceData struct {
-	TotalEvents24h      int            `json:"total_events_24h"`
-	AttendanceRate      float64        `json:"attendance_rate_percent"`
+	TotalEvents24h      MockDataValue  `json:"total_events_24h"`
+	AttendanceRate      MockDataValue  `json:"attendance_rate_percent"`
 	PeakAttendanceHours []HourlyStats  `json:"peak_attendance_hours"`
 	DepartmentStats     []DeptStats    `json:"department_stats"`
 }
@@ -533,18 +561,17 @@ func getSecurityMetricsData() SecurityMetricsData {
 			UserAgent: "Mozilla/5.0...",
 		},
 	}
-
 	// Active sessions
 	activeSessions := ActiveSessionsData{
 		TotalActive: getActiveSessions(),
 		SessionsByDevice: []DeviceSessionCount{
-			{DeviceType: "Desktop", Count: 15},
-			{DeviceType: "Mobile", Count: 8},
-			{DeviceType: "Tablet", Count: 3},
+			{DeviceType: "Desktop", Count: createEmptyYellowBox()},   // 🟡 Empty yellow box
+			{DeviceType: "Mobile", Count: createEmptyYellowBox()},    // 🟡 Empty yellow box  
+			{DeviceType: "Tablet", Count: createEmptyYellowBox()},    // 🟡 Empty yellow box
 		},
 		SessionsByLocation: []LocationSessionCount{
-			{Country: "Italy", City: "Rome", Count: 20},
-			{Country: "Italy", City: "Milan", Count: 6},
+			{Country: "Italy", City: "Rome", Count: createEmptyYellowBox()},  // 🟡 Empty yellow box
+			{Country: "Italy", City: "Milan", Count: createEmptyYellowBox()}, // 🟡 Empty yellow box
 		},
 	}
 
@@ -563,14 +590,13 @@ func getSecurityMetricsData() SecurityMetricsData {
 	}
 }
 
-func getAnalyticsData() AnalyticsData {
-	// QR Code analytics
+func getAnalyticsData() AnalyticsData {	// QR Code analytics
 	qrAnalytics := QRAnalyticsData{
 		TotalScans24h:    getQRScans24h(),
 		ScansPerHour:     getQRScansPerHour(),
 		TopScanLocations: getTopScanLocations(),
-		ScanSuccessRate:  97.8,
-		AverageScanTime:  1250.5,
+		ScanSuccessRate:  createEmptyYellowBox(), // 🟡 Empty yellow box instead of hardcoded value
+		AverageScanTime:  createEmptyYellowBox(), // 🟡 Empty yellow box instead of hardcoded value
 	}
 
 	// User behavior
@@ -583,7 +609,7 @@ func getAnalyticsData() AnalyticsData {
 	// Attendance stats
 	attendanceStats := AttendanceData{
 		TotalEvents24h:      getAttendanceEvents24h(),
-		AttendanceRate:      89.5,
+		AttendanceRate:      createEmptyYellowBox(), // 🟡 Empty yellow box instead of hardcoded value
 		PeakAttendanceHours: getPeakAttendanceHours(),
 		DepartmentStats:     getDepartmentStats(),
 	}
@@ -651,104 +677,104 @@ func getServiceUptime(service string) float64 {
 	return result
 }
 
-func getAvgResponseTime() float64 {
+func getAvgResponseTime() MockDataValue {
 	data, err := queryPrometheus(`histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))`)
 	if err != nil {
-		return 105.3
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data) * 1000
 	if result == 0 {
-		return 105.3
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getRequestsPerSecond() float64 {
+func getRequestsPerSecond() MockDataValue {
 	data, err := queryPrometheus(`sum(rate(http_requests_total[5m]))`)
 	if err != nil {
-		return 45.7
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 45.7
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getErrorRate() float64 {
+func getErrorRate() MockDataValue {
 	data, err := queryPrometheus(`sum(rate(http_requests_total{status=~"4..|5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100`)
 	if err != nil {
-		return 0.8
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 0.8
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getThroughput() float64 {
+func getThroughput() MockDataValue {
 	data, err := queryPrometheus(`sum(rate(prometheus_tsdb_symbol_table_size_bytes[5m]))`)
 	if err != nil {
-		return 12.4
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data) / 1024 / 1024
 	if result == 0 {
-		return 12.4
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getCpuUsage() float64 {
+func getCpuUsage() MockDataValue {
 	data, err := queryPrometheus(`(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100`)
 	if err != nil {
-		return 23.5
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 23.5
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getMemoryUsage() float64 {
+func getMemoryUsage() MockDataValue {
 	data, err := queryPrometheus(`(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100`)
 	if err != nil {
-		return 67.8
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 67.8
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getDiskUsage() float64 {
+func getDiskUsage() MockDataValue {
 	data, err := queryPrometheus(`(1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100`)
 	if err != nil {
-		return 45.2
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 45.2
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getNetworkUsage() float64 {
+func getNetworkUsage() MockDataValue {
 	data, err := queryPrometheus(`sum(rate(node_network_receive_bytes_total[5m])) / 1024 / 1024`)
 	if err != nil {
-		return 8.9
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := parsePrometheusValue(data)
 	if result == 0 {
-		return 8.9
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
 // Security metrics helpers with real database integration
-func getSuccessfulLogins24h() int {
+func getSuccessfulLogins24h() MockDataValue {
 	if authDB != nil {
 		var count int
 		query := `
@@ -760,7 +786,7 @@ func getSuccessfulLogins24h() int {
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved successful logins from DB: %d", count)
-			return count
+			return createRealDataValue(count)
 		} else {
 			log.Printf("⚠️ Failed to query auth DB: %v", err)
 		}
@@ -768,16 +794,16 @@ func getSuccessfulLogins24h() int {
 	
 	data, err := queryPrometheus(`increase(auth_attempts_total{status="success"}[24h])`)
 	if err != nil {
-		return 245 // Fallback
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := int(parsePrometheusValue(data))
 	if result == 0 {
-		return 245
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getFailedAttempts24h() int {
+func getFailedAttempts24h() MockDataValue {
 	if authDB != nil {
 		var count int
 		query := `
@@ -789,7 +815,7 @@ func getFailedAttempts24h() int {
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved failed attempts from DB: %d", count)
-			return count
+			return createRealDataValue(count)
 		} else {
 			log.Printf("⚠️ Failed to query auth DB: %v", err)
 		}
@@ -797,16 +823,16 @@ func getFailedAttempts24h() int {
 	
 	data, err := queryPrometheus(`increase(auth_attempts_total{status="failed"}[24h])`)
 	if err != nil {
-		return 23
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
 	result := int(parsePrometheusValue(data))
 	if result == 0 {
-		return 23
+		return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 	}
-	return result
+	return createRealDataValue(result)
 }
 
-func getAuthSuccessRate() float64 {
+func getAuthSuccessRate() MockDataValue {
 	if authDB != nil {
 		var successCount, totalCount int
 		successQuery := `
@@ -827,15 +853,15 @@ func getAuthSuccessRate() float64 {
 			if err := authDB.QueryRow(totalQuery).Scan(&totalCount); err == nil && totalCount > 0 {
 				rate := float64(successCount) / float64(totalCount) * 100
 				log.Printf("✅ Retrieved auth success rate from DB: %.2f%%", rate)
-				return rate
+				return createRealDataValue(rate)
 			}
 		}
 	}
 	
-	return 91.3 // Fallback
+	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
-func getSuspiciousActivityCount() int {
+func getSuspiciousActivityCount() MockDataValue {
 	if authDB != nil {
 		var count int
 		query := `
@@ -855,14 +881,14 @@ func getSuspiciousActivityCount() int {
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved suspicious activity count from DB: %d", count)
-			return count
+			return createRealDataValue(count)
 		}
 	}
 	
-	return 3 // Fallback
+	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
-func getActiveSessions() int {
+func getActiveSessions() MockDataValue {
 	if userDB != nil {
 		var count int
 		query := `
@@ -872,11 +898,11 @@ func getActiveSessions() int {
 		`
 		if err := userDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved active sessions from DB: %d", count)
-			return count
+			return createRealDataValue(count)
 		}
 	}
 	
-	return 42 // Fallback
+	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
 // Additional helper functions for analytics with database integration
@@ -999,7 +1025,7 @@ func getGeoLoginSpread() []GeoStats {
 	}
 }
 
-func getQRScans24h() int {
+func getQRScans24h() MockDataValue {
 	if userDB != nil {
 		var count int
 		query := `
@@ -1009,11 +1035,11 @@ func getQRScans24h() int {
 		`
 		if err := userDB.QueryRow(query).Scan(&count); err == nil {
 			log.Printf("✅ Retrieved QR scans from DB: %d", count)
-			return count
+			return createRealDataValue(count)
 		}
 	}
 	
-	return 156 // Fallback
+	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
 // Analytics helper functions with simple fallbacks
@@ -1053,8 +1079,8 @@ func getFeatureUsage() []FeatureUsageStats {
 	}
 }
 
-func getAttendanceEvents24h() int {
-	return 89 // Fallback
+func getAttendanceEvents24h() MockDataValue {
+	return createEmptyYellowBox() // 🟡 Empty yellow box instead of showing fallback value
 }
 
 func getPeakAttendanceHours() []HourlyStats {
