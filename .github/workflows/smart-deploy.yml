@@ -1,0 +1,164 @@
+name: 🚀 Smart Modular Deploy
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'auth-service/**'
+      - 'user-service/**'
+      - 'gateway/**'
+      - 'monitoring/**'
+      - 'docker-compose.prod.yml'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth-changed: ${{ steps.changes.outputs.auth }}
+      user-changed: ${{ steps.changes.outputs.user }}
+      gateway-changed: ${{ steps.changes.outputs.gateway }}
+      monitoring-changed: ${{ steps.changes.outputs.monitoring }}
+      docker-changed: ${{ steps.changes.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            auth:
+              - 'auth-service/**'
+            user:
+              - 'user-service/**'
+            gateway:
+              - 'gateway/**'
+            monitoring:
+              - 'monitoring/**'
+            docker:
+              - 'docker-compose.prod.yml'
+              - 'nginx/**'
+
+  deploy-auth-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.auth-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Deploy Auth Service Only
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            # Build only auth-service
+            docker-compose build auth-service
+            
+            # Restart only auth-service (zero downtime per altri servizi)
+            docker-compose up -d auth-service
+            
+            # Health check
+            sleep 5
+            curl -f http://localhost:3001/health || exit 1
+            
+            echo "✅ Auth Service deployed successfully!"
+
+  deploy-user-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.user-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Deploy User Service Only
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            # Build only user-service
+            docker-compose build user-service
+            
+            # Restart only user-service
+            docker-compose up -d user-service
+            
+            # Health check
+            sleep 5
+            curl -f http://localhost:3002/health || exit 1
+            
+            echo "✅ User Service deployed successfully!"
+
+  deploy-gateway:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.gateway-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Deploy Gateway Only
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            # Build only gateway
+            docker-compose build gateway
+            
+            # Restart only gateway
+            docker-compose up -d gateway
+            
+            # Health check
+            sleep 5
+            curl -f http://localhost:8080/health || exit 1
+            
+            echo "✅ Gateway deployed successfully!"
+
+  deploy-monitoring:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.monitoring-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Deploy Monitoring Only
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            # Build only monitoring services
+            docker-compose build dashboard-api prometheus-service
+            
+            # Restart only monitoring
+            docker-compose up -d dashboard-api prometheus-service
+            
+            echo "✅ Monitoring deployed successfully!"
+
+  full-deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Full Stack Deploy (Docker Config Changed)
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /deploy/go-cloud-backend
+            git pull origin main
+            
+            # Solo quando docker-compose.yml cambia, rebuilda tutto
+            docker-compose down
+            docker-compose build
+            docker-compose up -d
+            
+            echo "✅ Full stack deployed successfully!"
