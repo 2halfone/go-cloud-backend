@@ -1,86 +1,124 @@
-# 🚀 Smart Deploy Makefile
+.PHONY: deploy-auth deploy-user deploy-gateway deploy-monitoring status health-check clean logs-auth logs-user logs-gateway logs-monitoring full-deploy dev-restart quick-logs help
 
-.PHONY: help deploy-auth deploy-user deploy-gateway deploy-monitoring deploy-all status
+# =============================================================================
+# MODULAR DEPLOYMENT COMMANDS
+# =============================================================================
 
-help: ## Show this help
-	@echo "🚀 Smart Deploy Commands:"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
-
-# Deploy singoli servizi
-deploy-auth: ## Deploy only auth-service
-	@echo "🔧 Deploying Auth Service..."
+# Deploy single services (NO full restart)
+deploy-auth:
+	@echo "🔧 Building auth-service..."
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
 	docker-compose build auth-service
-	docker-compose up -d auth-service
-	@echo "✅ Auth Service deployed!"
+	@echo "⚡ Restarting ONLY auth-service..."
+	docker-compose up -d --no-deps auth-service
+	@echo "✅ Auth service deployed successfully"
 
-deploy-user: ## Deploy only user-service
-	@echo "🔧 Deploying User Service..."
+deploy-user:
+	@echo "🔧 Building user-service..."
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
 	docker-compose build user-service
-	docker-compose up -d user-service
-	@echo "✅ User Service deployed!"
+	@echo "⚡ Restarting ONLY user-service..."
+	docker-compose up -d --no-deps user-service
+	@echo "✅ User service deployed successfully"
 
-deploy-gateway: ## Deploy only gateway
-	@echo "🔧 Deploying Gateway..."
+deploy-gateway:
+	@echo "🔧 Building gateway..."
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
 	docker-compose build gateway
-	docker-compose up -d gateway
-	@echo "✅ Gateway deployed!"
+	@echo "⚡ Restarting ONLY gateway..."
+	docker-compose up -d --no-deps gateway
+	@echo "✅ Gateway deployed successfully"
 
-deploy-monitoring: ## Deploy only monitoring services
-	@echo "🔧 Deploying Monitoring..."
-	docker-compose build dashboard-api prometheus-service
-	docker-compose up -d dashboard-api prometheus-service
-	@echo "✅ Monitoring deployed!"
+deploy-monitoring:
+	@echo "🔧 Building monitoring services..."
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose build prometheus-service dashboard-api
+	@echo "⚡ Restarting ONLY monitoring services..."
+	docker-compose up -d --no-deps prometheus-service dashboard-api
+	@echo "✅ Monitoring deployed successfully"
 
-deploy-all: ## Deploy all services (full rebuild)
-	@echo "🔥 Full deployment..."
+# =============================================================================
+# UTILITY COMMANDS
+# =============================================================================
+
+status:
+	@echo "� Service Status:"
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose ps
+
+health-check:
+	@echo "🏥 Health Check:"
+	@command -v curl >/dev/null 2>&1 || { echo "❌ curl not installed"; exit 1; }
+	@echo "Auth Service:" && (curl -s -f http://localhost:3001/health >/dev/null && echo "✅ UP" || echo "❌ DOWN")
+	@echo "User Service:" && (curl -s -f http://localhost:3002/health >/dev/null && echo "✅ UP" || echo "❌ DOWN")
+	@echo "Gateway:" && (curl -s -f http://localhost:3000/health >/dev/null && echo "✅ UP" || echo "❌ DOWN")
+	@echo "Dashboard:" && (curl -s -f http://localhost:3003/health >/dev/null && echo "✅ UP" || echo "❌ DOWN")
+
+logs-auth:
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose logs -f auth-service
+
+logs-user:
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose logs -f user-service
+
+logs-gateway:
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose logs -f gateway
+
+logs-monitoring:
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose logs -f dashboard-api prometheus-service
+
+# =============================================================================
+# EMERGENCY COMMANDS (Use only when necessary)
+# =============================================================================
+
+full-deploy:
+	@echo "🔥 FULL DEPLOY - This will restart ALL services"
+	@echo "⚠️  This should only be used for major changes"
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
 	docker-compose down
 	docker-compose build
 	docker-compose up -d
-	@echo "✅ Full stack deployed!"
+	@echo "✅ Full deployment complete"
 
-# Utility commands
-status: ## Show services status
-	@echo "📊 Services Status:"
-	docker-compose ps
-
-logs-auth: ## Show auth-service logs
-	docker-compose logs -f auth-service
-
-logs-user: ## Show user-service logs
-	docker-compose logs -f user-service
-
-logs-gateway: ## Show gateway logs
-	docker-compose logs -f gateway
-
-logs-monitoring: ## Show monitoring logs
-	docker-compose logs -f dashboard-api prometheus-service
-
-# Health checks
-health-check: ## Check all services health
-	@echo "🏥 Health Checking..."
-	@curl -f http://localhost:3001/health && echo "✅ Auth Service OK" || echo "❌ Auth Service DOWN"
-	@curl -f http://localhost:3002/health && echo "✅ User Service OK" || echo "❌ User Service DOWN"
-	@curl -f http://localhost:8080/health && echo "✅ Gateway OK" || echo "❌ Gateway DOWN"
-	@curl -f http://localhost:3003/api/health && echo "✅ Monitoring OK" || echo "❌ Monitoring DOWN"
-
-# Quick deploy commands
-quick-auth: ## Quick auth deploy (no cache)
-	docker-compose build --no-cache auth-service
-	docker-compose up -d auth-service
-
-quick-user: ## Quick user deploy (no cache)
-	docker-compose build --no-cache user-service
-	docker-compose up -d user-service
-
-# Development helpers
-dev-up: ## Start all services for development
-	docker-compose -f docker-compose.yml up -d
-
-dev-down: ## Stop all development services
-	docker-compose -f docker-compose.yml down
-
-# Clean up
-clean: ## Clean unused Docker resources
+clean:
+	@echo "🧹 Cleaning Docker..."
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose down --volumes --remove-orphans
 	docker system prune -f
-	docker volume prune -f
+
+# =============================================================================
+# DEVELOPMENT COMMANDS
+# =============================================================================
+
+dev-restart:
+	@echo "🔄 Quick restart for development"
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose restart
+
+quick-logs:
+	@if [ ! -f docker-compose.yml ]; then echo "❌ docker-compose.yml not found"; exit 1; fi
+	docker-compose logs --tail=50 -f
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+help:
+	@echo "🚀 Available commands:"
+	@echo "  deploy-auth        Deploy only auth-service"
+	@echo "  deploy-user        Deploy only user-service"
+	@echo "  deploy-gateway     Deploy only gateway"
+	@echo "  deploy-monitoring  Deploy only monitoring"
+	@echo "  status            Show service status"
+	@echo "  health-check      Check service health"
+	@echo "  logs-auth         Show auth-service logs"
+	@echo "  logs-user         Show user-service logs"
+	@echo "  logs-gateway      Show gateway logs"
+	@echo "  logs-monitoring   Show monitoring logs"
+	@echo "  full-deploy       Deploy all services (emergency)"
+	@echo "  clean             Clean Docker (emergency)"
+	@echo "  dev-restart       Quick restart all"
+	@echo "  quick-logs        Show recent logs"
