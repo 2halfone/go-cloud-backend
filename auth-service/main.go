@@ -1,7 +1,7 @@
 package main
 
-// 🚀 SMART DEPLOY TEST: This change should trigger only auth-service deployment
-// Testing modular pipeline - other services should stay UP with zero downtime
+// � SECRET FIX TEST: Testing corrected SSH secret names in workflow
+// This change should trigger only auth-service deployment with proper secrets
 
 import (
     "auth-service/database"
