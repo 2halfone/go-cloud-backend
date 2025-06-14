@@ -1,5 +1,33 @@
 package main
 
+// @title Dashboard API
+// @version 1.0
+// @description Comprehensive monitoring dashboard API for go-cloud-backend system
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://github.com/your-repo/go-cloud-backend
+// @contact.email support@yourcompany.com
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:3003
+// @BasePath /
+// @schemes http https
+
+// @tag.name Health
+// @tag.description Health check endpoints
+
+// @tag.name Security
+// @tag.description Security monitoring and authentication stats
+
+// @tag.name VM Health
+// @tag.description Virtual machine and system resource monitoring
+
+// @tag.name Analytics
+// @tag.description QR code analytics and insights
+
 import (
 	"database/sql"
 	"encoding/json"
@@ -16,7 +44,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	fiberSwagger "github.com/swaggo/fiber-swagger"
 	_ "github.com/lib/pq"
+
+	_ "dashboard-api/docs" // Import generated docs
 )
 
 // Global variables for configuration and database connections
@@ -1160,6 +1191,252 @@ func getQRTrendsFromDB() map[string]int {
 	}
 }
 
+// =============================================================================
+// SWAGGER API HANDLERS
+// =============================================================================
+
+var startTime = time.Now()
+
+// @Summary Health Check
+// @Description Check if the dashboard API service is healthy and all dependencies are working
+// @Tags Health
+// @Accept json
+// @Produce json
+// @Success 200 {object} HealthResponse "Service is healthy"
+// @Failure 503 {object} ErrorResponse "Service unavailable"
+// @Router /health [get]
+func healthCheckHandler(c *fiber.Ctx) error {
+	// Check Prometheus connection
+	prometheusHealthy := checkPrometheusHealth()
+	
+	// Check database connections
+	authDBHealthy := checkAuthDatabaseHealth()
+	userDBHealthy := checkUserDatabaseHealth()
+
+	// Overall health status
+	allHealthy := prometheusHealthy && authDBHealthy && userDBHealthy
+
+	status := "healthy"
+	httpCode := fiber.StatusOK
+	if !allHealthy {
+		status = "degraded"
+		httpCode = fiber.StatusServiceUnavailable
+	}
+
+	response := HealthResponse{
+		Status:    status,
+		Timestamp: time.Now().UTC(),
+		Dependencies: DependencyStatus{
+			Prometheus: prometheusHealthy,
+			AuthDB:     authDBHealthy,
+			UserDB:     userDBHealthy,
+		},
+		Uptime: time.Since(startTime).String(),
+	}
+
+	return c.Status(httpCode).JSON(response)
+}
+
+// @Summary Get Security Data
+// @Description Retrieve comprehensive security monitoring data including authentication stats, JWT validation, and user activity
+// @Tags Security
+// @Accept json
+// @Produce json
+// @Success 200 {object} SecurityResponse "Security data retrieved successfully"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/dashboard/security [get]
+func getSecurityDataHandler(c *fiber.Ctx) error {
+	start := time.Now()
+	log.Println("🔐 Collecting security metrics...")
+	
+	// Query Prometheus per metriche di sicurezza
+	successfulLogins := getSuccessfulLogins24h()
+	failedAttempts := getFailedAttempts24h()
+	jwtValidations := queryPrometheusWithLog("sum(jwt_validation_total{status=\"success\"})", "JWT validations")
+	jwtFailures := queryPrometheusWithLog("sum(jwt_validation_total{status=\"failed\"})", "JWT failures")
+	activeUsers := queryPrometheusWithLog("sum(active_users_total)", "Active users")
+	
+	// Query Database per dati aggiuntivi
+	suspiciousActivity := getSuspiciousActivityFromDB()
+	
+	securityData := SecurityGroupData{
+		AuthenticationStats: map[string]interface{}{
+			"successful_logins_24h": successfulLogins,
+			"failed_attempts_24h":   failedAttempts,
+			"success_rate_percent":  calculateSuccessRateFromMock(successfulLogins, failedAttempts),
+		},
+		JWTValidation: map[string]interface{}{
+			"valid_tokens_24h":   jwtValidations,
+			"invalid_tokens_24h": jwtFailures,
+			"validation_rate":    calculateValidationRate(jwtValidations, jwtFailures),
+		},
+		UserActivity: map[string]interface{}{
+			"active_users_current": activeUsers,
+			"suspicious_activity":  suspiciousActivity,
+		},
+		SecurityLevel: calculateSecurityLevelFromMock(successfulLogins, failedAttempts, int(suspiciousActivity)),
+		Metadata: map[string]interface{}{
+			"data_source":        "prometheus+database",
+			"last_updated":       time.Now().Format(time.RFC3339),
+			"collection_time_ms": time.Since(start).Milliseconds(),
+		},
+	}
+
+	response := SecurityResponse{
+		AuthenticationStats: securityData.AuthenticationStats,
+		JWTValidation:      securityData.JWTValidation,
+		UserActivity:       securityData.UserActivity,
+		SecurityLevel:      securityData.SecurityLevel,
+		Metadata: Metadata{
+			CollectionTimeMs: time.Since(start).Milliseconds(),
+			DataSource:       "prometheus+database",
+			LastUpdated:      time.Now().UTC(),
+		},
+	}
+
+	return c.JSON(response)
+}
+
+// @Summary Get VM Health Data
+// @Description Retrieve virtual machine health data including system resources, service health, and performance metrics
+// @Tags VM Health
+// @Accept json
+// @Produce json
+// @Success 200 {object} VMHealthResponse "VM health data retrieved successfully"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/dashboard/vm-health [get]
+func getVMHealthHandler(c *fiber.Ctx) error {
+	start := time.Now()
+	log.Println("💻 Collecting VM health metrics...")
+	// Get system resource data
+	systemResourcesData := getSystemHealthData()
+	
+	response := VMHealthResponse{
+		SystemResources: map[string]interface{}{
+			"resource_usage": systemResourcesData.ResourceUsage,
+			"performance":    systemResourcesData.Performance,
+		},
+		ServiceHealth: map[string]interface{}{
+			"services":       systemResourcesData.Services,
+			"overall_status": systemResourcesData.OverallStatus,
+		},
+		DatabaseHealth: map[string]interface{}{
+			"auth_db_status": checkAuthDatabaseHealth(),
+			"user_db_status": checkUserDatabaseHealth(),
+		},
+		ResponseTimes: map[string]interface{}{
+			"services": systemResourcesData.Services,
+		},
+		Metadata: Metadata{
+			CollectionTimeMs: time.Since(start).Milliseconds(),
+			DataSource:       "prometheus+database",
+			LastUpdated:      time.Now().UTC(),
+		},
+	}
+
+	return c.JSON(response)
+}
+
+// @Summary Get Analytics Insights
+// @Description Retrieve QR code analytics, user engagement metrics, and system insights
+// @Tags Analytics
+// @Accept json
+// @Produce json
+// @Success 200 {object} AnalyticsResponse "Analytics data retrieved successfully"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/dashboard/insights [get]
+func getAnalyticsInsightsHandler(c *fiber.Ctx) error {
+	start := time.Now()
+	log.Println("📊 Collecting analytics insights...")
+
+	// Get analytics data
+	analyticsData := getAnalyticsData()
+		response := AnalyticsResponse{
+		QRAnalytics: map[string]interface{}{
+			"qr_code_analytics": analyticsData.QRCodeAnalytics,
+		},
+		UserActivity: map[string]interface{}{
+			"user_behavior": analyticsData.UserBehavior,
+		},
+		EventInsights: map[string]interface{}{
+			"attendance_stats": analyticsData.AttendanceStats,
+		},
+		UsagePatterns: map[string]interface{}{
+			"api_usage_stats":    analyticsData.APIUsageStats,
+			"database_metrics":   analyticsData.DatabaseMetrics,
+		},
+		Metadata: Metadata{
+			CollectionTimeMs: time.Since(start).Milliseconds(),
+			DataSource:       "prometheus+database",
+			LastUpdated:      time.Now().UTC(),
+		},
+	}
+
+	return c.JSON(response)
+}
+
+// =============================================================================
+// HELPER FUNCTIONS FOR SWAGGER HANDLERS
+// =============================================================================
+
+func checkPrometheusHealth() bool {
+	_, err := queryPrometheus("up")
+	return err == nil
+}
+
+func checkAuthDatabaseHealth() bool {
+	return authDB != nil && authDB.Ping() == nil
+}
+
+func checkUserDatabaseHealth() bool {
+	return userDB != nil && userDB.Ping() == nil
+}
+
+func calculateSuccessRateFromMock(successful, failed MockDataValue) float64 {
+	if successful.IsMock || failed.IsMock {
+		return 0.0
+	}
+	
+	var successVal, failedVal float64
+	if s, ok := successful.Value.(float64); ok {
+		successVal = s
+	}
+	if f, ok := failed.Value.(float64); ok {
+		failedVal = f
+	}
+	
+	total := successVal + failedVal
+	if total == 0 {
+		return 0.0
+	}
+	return (successVal / total) * 100
+}
+
+func calculateValidationRate(valid, invalid float64) float64 {
+	total := valid + invalid
+	if total == 0 {
+		return 0.0
+	}
+	return (valid / total) * 100
+}
+
+func calculateSecurityLevelFromMock(logins, failures MockDataValue, suspicious int) string {
+	// Simple security level calculation
+	if suspicious > 10 {
+		return "HIGH_RISK"
+	}
+	
+	if !logins.IsMock && !failures.IsMock {
+		successRate := calculateSuccessRateFromMock(logins, failures)
+		if successRate < 50 {
+			return "HIGH_RISK"
+		} else if successRate < 80 {
+			return "MEDIUM_RISK"
+		}
+	}
+		return "LOW_RISK"
+}
+
 func main() {
 	// Configurazione ambiente
 	prometheusURL = os.Getenv("PROMETHEUS_URL")
@@ -1196,225 +1473,19 @@ func main() {
 		AllowCredentials: false,
 	}))
 
-	// 🔐 SECURITY GROUP - Endpoint per metriche di sicurezza
-	app.Get("/api/dashboard/security", func(c *fiber.Ctx) error {
-		start := time.Now()
-		log.Println("🔐 Collecting security metrics...")
-		
-		// Query Prometheus per metriche di sicurezza
-		successfulLogins := queryPrometheusWithLog("sum(auth_attempts_total{status=\"success\"})", "Successful logins")
-		failedAttempts := queryPrometheusWithLog("sum(auth_attempts_total{status=\"failed\"})", "Failed attempts")
-		jwtValidations := queryPrometheusWithLog("sum(jwt_validation_total{status=\"success\"})", "JWT validations")
-		jwtFailures := queryPrometheusWithLog("sum(jwt_validation_total{status=\"failed\"})", "JWT failures")
-		activeUsers := queryPrometheusWithLog("sum(active_users_total)", "Active users")
-		
-		// Query Database per dati aggiuntivi
-		suspiciousActivity := getSuspiciousActivityFromDB()
-		
-		securityData := SecurityGroupData{
-			AuthenticationStats: map[string]interface{}{
-				"successful_logins_24h": successfulLogins,
-				"failed_attempts_24h":   failedAttempts,
-				"success_rate_percent":  calculateSuccessRate(successfulLogins, failedAttempts),
-			},
-			JWTValidation: map[string]interface{}{
-				"valid_tokens_24h":   jwtValidations,
-				"invalid_tokens_24h": jwtFailures,
-				"validation_rate":    calculateSuccessRate(jwtValidations, jwtFailures),
-			},
-			UserActivity: map[string]interface{}{
-				"active_users_current": activeUsers,
-				"suspicious_activity":  suspiciousActivity,
-			},
-			SecurityLevel: calculateSecurityLevel(successfulLogins, failedAttempts, float64(suspiciousActivity)),
-			Metadata: map[string]interface{}{
-				"data_source":        "prometheus+database",
-				"last_updated":       time.Now().Format(time.RFC3339),
-				"collection_time_ms": time.Since(start).Milliseconds(),
-			},
-		}
-		
-		log.Printf("✅ Security data collection completed in %v", time.Since(start))
-		return c.JSON(securityData)
-	})
+	// 📖 Swagger documentation endpoint
+	app.Get("/swagger/*", fiberSwagger.WrapHandler)
 
-	// 🩺 VM HEALTH GROUP - Endpoint per stato salute VM
-	app.Get("/api/dashboard/vm-health", func(c *fiber.Ctx) error {
-		start := time.Now()
-		log.Println("🩺 Collecting VM health metrics...")
-		
-		// System Resources (Prometheus queries)
-		cpuUsage := queryPrometheusWithLog("(1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100", "CPU usage")
-		memoryUsage := queryPrometheusWithLog("(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100", "Memory usage")
-		diskUsage := queryPrometheusWithLog("(1 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"})) * 100", "Disk usage")
-		networkUsage := queryPrometheusWithLog("sum(rate(node_network_receive_bytes_total[5m])) / 1024 / 1024", "Network usage")
-		
-		// Service Health
-		authServiceUp := queryPrometheusWithLog("up{job=\"auth-service\"}", "Auth service uptime")
-		userServiceUp := queryPrometheusWithLog("up{job=\"user-service\"}", "User service uptime")
-		gatewayUp := queryPrometheusWithLog("up{job=\"gateway\"}", "Gateway uptime")
-		
-		// Response Times
-		authResponseTime := queryPrometheusWithLog("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"auth-service\"}[5m]))", "Auth response time")
-		userResponseTime := queryPrometheusWithLog("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"user-service\"}[5m]))", "User response time")
-		gatewayResponseTime := queryPrometheusWithLog("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m]))", "Gateway response time")
-		
-		vmHealthData := VMHealthData{
-			SystemResources: map[string]interface{}{
-				"cpu_usage_percent":     cpuUsage,
-				"memory_usage_percent":  memoryUsage,
-				"disk_usage_percent":    diskUsage,
-				"network_usage_mbps":    networkUsage,
-			},
-			ServiceHealth: map[string]interface{}{
-				"auth_service_uptime":   authServiceUp * 100,
-				"user_service_uptime":   userServiceUp * 100,
-				"gateway_uptime":        gatewayUp * 100,
-				"services_total":        3,
-				"services_up":          int(authServiceUp + userServiceUp + gatewayUp),
-			},
-			DatabaseHealth: map[string]interface{}{
-				"auth_db_status":   getDBStatus(authDB),
-				"user_db_status":   getDBStatus(userDB),
-			},
-			ResponseTimes: map[string]interface{}{
-				"auth_service_ms":   authResponseTime * 1000,
-				"user_service_ms":   userResponseTime * 1000,
-				"gateway_ms":        gatewayResponseTime * 1000,
-			},
-			Metadata: map[string]interface{}{
-				"data_source":        "prometheus+database",
-				"last_updated":       time.Now().Format(time.RFC3339),
-				"collection_time_ms": time.Since(start).Milliseconds(),
-			},
-		}
-		
-		log.Printf("✅ VM health data collection completed in %v", time.Since(start))
-		return c.JSON(vmHealthData)
-	})
+	// 🔧 Health check endpoint
+	app.Get("/health", healthCheckHandler)
 
-	// 🎯 INSIGHTS GROUP - Endpoint per curiosità e analytics
-	app.Get("/api/dashboard/insights", func(c *fiber.Ctx) error {
-		start := time.Now()
-		log.Println("🎯 Collecting insights and curiosity data...")
-		
-		// QR Analytics (Prometheus)
-		totalQRScans := queryPrometheusWithLog("sum(qr_scans_total)", "Total QR scans")
-		successfulQRScans := queryPrometheusWithLog("sum(qr_scans_total{status=\"success\"})", "Successful QR scans")
-		failedQRScans := queryPrometheusWithLog("sum(qr_scans_total{status=\"failed\"})", "Failed QR scans")
-		qrEvents := queryPrometheusWithLog("sum(qr_events_total)", "QR events")
-		
-		// Usage Patterns (Prometheus)
-		requestRate := queryPrometheusWithLog("sum(rate(http_requests_total[1h]))", "Request rate per hour")
-		
-		// Database insights
-		mostActiveUsers := getMostActiveUsersFromDB()
-		qrTrends := getQRTrendsFromDB()
-		
-		insightsData := InsightsData{
-			QRAnalytics: map[string]interface{}{
-				"total_scans_24h":     totalQRScans,
-				"successful_scans":    successfulQRScans,
-				"failed_scans":        failedQRScans,
-				"success_rate_percent": calculateSuccessRate(successfulQRScans, failedQRScans),
-				"total_events":        qrEvents,
-				"trends":              qrTrends,
-			},
-			UserActivity: map[string]interface{}{
-				"most_active_users": mostActiveUsers,
-				"requests_per_hour": requestRate,
-			},
-			EventInsights: map[string]interface{}{
-				"events_created_today": qrTrends["today"],
-				"events_created_week":  qrTrends["week"],
-				"daily_average":        qrTrends["daily_average"],
-			},			UsagePatterns: map[string]interface{}{
-				"peak_usage_hour":      requestRate,
-				"system_load":          getSystemLoad(), // Get real system load
-			},
-			Metadata: map[string]interface{}{
-				"data_source":        "prometheus+database",
-				"last_updated":       time.Now().Format(time.RFC3339),
-				"collection_time_ms": time.Since(start).Milliseconds(),
-			},
-		}
-		
-		log.Printf("✅ Insights data collection completed in %v", time.Since(start))
-		return c.JSON(insightsData)
-	})
+	// 🔐 API Routes
+	app.Get("/api/dashboard/security", getSecurityDataHandler)
+	app.Get("/api/dashboard/vm-health", getVMHealthHandler)
+	app.Get("/api/dashboard/insights", getAnalyticsInsightsHandler)
 
-	// Health check
-	app.Get("/health", func(c *fiber.Ctx) error {
-		// Test database connections
-		dbStatus := make(map[string]string)
-		
-		if authDB != nil {
-			if err := authDB.Ping(); err != nil {
-				dbStatus["auth_db"] = "disconnected"
-			} else {
-				dbStatus["auth_db"] = "connected"
-			}
-		} else {
-			dbStatus["auth_db"] = "not_configured"
-		}
-		
-		if userDB != nil {
-			if err := userDB.Ping(); err != nil {
-				dbStatus["user_db"] = "disconnected"
-			} else {
-				dbStatus["user_db"] = "connected"
-			}
-		} else {
-			dbStatus["user_db"] = "not_configured"
-		}
-
-		// Test Prometheus connection
-		prometheusStatus := "disconnected"
-		if resp, err := http.Get(prometheusURL + "/api/v1/query?query=up"); err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == 200 {
-				prometheusStatus = "connected"
-			}
-		}
-
-		return c.JSON(fiber.Map{
-			"status":    "healthy",
-			"service":   "dashboard-api",
-			"timestamp": time.Now().Format(time.RFC3339),
-			"dependencies": fiber.Map{
-				"prometheus": prometheusStatus,
-				"databases":  dbStatus,
-			},
-			"endpoints": []string{
-				"/api/dashboard/security",
-				"/api/dashboard/vm-health", 
-				"/api/dashboard/insights",
-			},
-		})
-	})
-
-	// Start server
-	log.Printf("🎯 Dashboard API listening on port 3003...")
-	log.Printf("📊 Endpoints: /api/dashboard/security, /api/dashboard/vm-health, /api/dashboard/insights")
+	// Avvia server
+	log.Println("🚀 Dashboard API server starting on :3003")
+	log.Println("📖 Swagger documentation available at: http://localhost:3003/swagger/")
 	log.Fatal(app.Listen(":3003"))
-}
-
-// getSystemLoad calculates real system load based on CPU usage
-func getSystemLoad() string {
-	cpuUsage := getCpuUsage()
-	if cpuUsage.IsMock {
-		return "unknown" // If no CPU data available
-	}
-	
-	if cpuValue, ok := cpuUsage.Value.(float64); ok {
-		if cpuValue > 80 {
-			return "high"
-		} else if cpuValue > 50 {
-			return "medium"
-		} else {
-			return "low"
-		}
-	}
-	
-	return "unknown"
 }

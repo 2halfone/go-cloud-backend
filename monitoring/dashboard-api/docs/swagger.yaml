@@ -1,0 +1,208 @@
+basePath: /
+definitions:
+  main.AnalyticsResponse:
+    properties:
+      event_insights:
+        additionalProperties: true
+        type: object
+      metadata:
+        $ref: '#/definitions/main.Metadata'
+      qr_analytics:
+        additionalProperties: true
+        type: object
+      usage_patterns:
+        additionalProperties: true
+        type: object
+      user_activity:
+        additionalProperties: true
+        type: object
+    type: object
+  main.DependencyStatus:
+    properties:
+      auth_db:
+        example: true
+        type: boolean
+      prometheus:
+        example: true
+        type: boolean
+      user_db:
+        example: true
+        type: boolean
+    type: object
+  main.ErrorResponse:
+    properties:
+      code:
+        example: 500
+        type: integer
+      error:
+        example: Internal server error
+        type: string
+      message:
+        example: Detailed error message
+        type: string
+    type: object
+  main.HealthResponse:
+    properties:
+      dependencies:
+        $ref: '#/definitions/main.DependencyStatus'
+      status:
+        example: healthy
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        example: 2h30m15s
+        type: string
+    type: object
+  main.Metadata:
+    properties:
+      collection_time_ms:
+        example: 15
+        type: integer
+      data_source:
+        example: prometheus+database
+        type: string
+      last_updated:
+        type: string
+    type: object
+  main.SecurityResponse:
+    properties:
+      authentication_stats:
+        additionalProperties: true
+        type: object
+      jwt_validation:
+        additionalProperties: true
+        type: object
+      metadata:
+        $ref: '#/definitions/main.Metadata'
+      security_level:
+        example: HIGH_RISK
+        type: string
+      user_activity:
+        additionalProperties: true
+        type: object
+    type: object
+  main.VMHealthResponse:
+    properties:
+      database_health:
+        additionalProperties: true
+        type: object
+      metadata:
+        $ref: '#/definitions/main.Metadata'
+      response_times:
+        additionalProperties: true
+        type: object
+      service_health:
+        additionalProperties: true
+        type: object
+      system_resources:
+        additionalProperties: true
+        type: object
+    type: object
+host: localhost:3003
+info:
+  contact:
+    email: support@yourcompany.com
+    name: API Support
+    url: http://github.com/your-repo/go-cloud-backend
+  description: Comprehensive monitoring dashboard API for go-cloud-backend system
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: Dashboard API
+  version: "1.0"
+paths:
+  /api/dashboard/insights:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve QR code analytics, user engagement metrics, and system
+        insights
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Analytics data retrieved successfully
+          schema:
+            $ref: '#/definitions/main.AnalyticsResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Get Analytics Insights
+      tags:
+      - Analytics
+  /api/dashboard/security:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve comprehensive security monitoring data including authentication
+        stats, JWT validation, and user activity
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Security data retrieved successfully
+          schema:
+            $ref: '#/definitions/main.SecurityResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Get Security Data
+      tags:
+      - Security
+  /api/dashboard/vm-health:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve virtual machine health data including system resources,
+        service health, and performance metrics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: VM health data retrieved successfully
+          schema:
+            $ref: '#/definitions/main.VMHealthResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Get VM Health Data
+      tags:
+      - VM Health
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Check if the dashboard API service is healthy and all dependencies
+        are working
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/main.HealthResponse'
+        "503":
+          description: Service unavailable
+          schema:
+            $ref: '#/definitions/main.ErrorResponse'
+      summary: Health Check
+      tags:
+      - Health
+schemes:
+- http
+- https
+swagger: "2.0"
+tags:
+- description: Health check endpoints
+  name: Health
+- description: Security monitoring and authentication stats
+  name: Security
+- description: Virtual machine and system resource monitoring
+  name: VM Health
+- description: QR code analytics and insights
+  name: Analytics

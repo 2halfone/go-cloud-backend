@@ -1,0 +1,303 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Comprehensive monitoring dashboard API for go-cloud-backend system",
+        "title": "Dashboard API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "http://github.com/your-repo/go-cloud-backend",
+            "email": "support@yourcompany.com"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:3003",
+    "basePath": "/",
+    "paths": {
+        "/api/dashboard/insights": {
+            "get": {
+                "description": "Retrieve QR code analytics, user engagement metrics, and system insights",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Get Analytics Insights",
+                "responses": {
+                    "200": {
+                        "description": "Analytics data retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/main.AnalyticsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dashboard/security": {
+            "get": {
+                "description": "Retrieve comprehensive security monitoring data including authentication stats, JWT validation, and user activity",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security"
+                ],
+                "summary": "Get Security Data",
+                "responses": {
+                    "200": {
+                        "description": "Security data retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/main.SecurityResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dashboard/vm-health": {
+            "get": {
+                "description": "Retrieve virtual machine health data including system resources, service health, and performance metrics",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VM Health"
+                ],
+                "summary": "Get VM Health Data",
+                "responses": {
+                    "200": {
+                        "description": "VM health data retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/main.VMHealthResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Check if the dashboard API service is healthy and all dependencies are working",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health Check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/main.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/main.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.AnalyticsResponse": {
+            "type": "object",
+            "properties": {
+                "event_insights": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "metadata": {
+                    "$ref": "#/definitions/main.Metadata"
+                },
+                "qr_analytics": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "usage_patterns": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "user_activity": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "main.DependencyStatus": {
+            "type": "object",
+            "properties": {
+                "auth_db": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "prometheus": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "user_db": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "main.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 500
+                },
+                "error": {
+                    "type": "string",
+                    "example": "Internal server error"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Detailed error message"
+                }
+            }
+        },
+        "main.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "dependencies": {
+                    "$ref": "#/definitions/main.DependencyStatus"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "healthy"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "uptime": {
+                    "type": "string",
+                    "example": "2h30m15s"
+                }
+            }
+        },
+        "main.Metadata": {
+            "type": "object",
+            "properties": {
+                "collection_time_ms": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "data_source": {
+                    "type": "string",
+                    "example": "prometheus+database"
+                },
+                "last_updated": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.SecurityResponse": {
+            "type": "object",
+            "properties": {
+                "authentication_stats": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "jwt_validation": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "metadata": {
+                    "$ref": "#/definitions/main.Metadata"
+                },
+                "security_level": {
+                    "type": "string",
+                    "example": "HIGH_RISK"
+                },
+                "user_activity": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "main.VMHealthResponse": {
+            "type": "object",
+            "properties": {
+                "database_health": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "metadata": {
+                    "$ref": "#/definitions/main.Metadata"
+                },
+                "response_times": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "service_health": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "system_resources": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "description": "Health check endpoints",
+            "name": "Health"
+        },
+        {
+            "description": "Security monitoring and authentication stats",
+            "name": "Security"
+        },
+        {
+            "description": "Virtual machine and system resource monitoring",
+            "name": "VM Health"
+        },
+        {
+            "description": "QR code analytics and insights",
+            "name": "Analytics"
+        }
+    ]
+}
