@@ -57,7 +57,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             # Build only auth-service
@@ -84,7 +84,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             # Build only user-service
@@ -111,7 +111,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             # Build only gateway
@@ -138,7 +138,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             # Build only monitoring services
@@ -161,7 +161,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             echo "✅ Configuration files updated successfully!"
@@ -179,7 +179,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /deploy/go-cloud-backend
+            cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
             # Solo quando docker-compose.yml cambia, rebuilda tutto
