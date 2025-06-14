@@ -1,6 +1,6 @@
 # Metrics & Monitoring
 
-Questa cartella contiene tutti i servizi e componenti relativi al monitoraggio e alla raccolta di metriche del backend Go.
+Questa cartella contiene. tutti i servizi e componenti relativi al monitoraggio e alla raccolta di metriche del backend Go.
 
 ## 📊 Struttura
 
