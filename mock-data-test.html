@@ -126,35 +126,33 @@
         <div class="header">
             <h1>🟡 Mock Data Highlighting System</h1>
             <p>Distingue chiaramente i dati reali da quelli mock con caselle vuote gialle</p>
-        </div>
-
-        <div class="metrics-grid">
+        </div>        <div class="metrics-grid">
             <div class="metric-card">
                 <h3>💻 System Resources</h3>
-                <div class="metric-value real-data">CPU: 45.2% (Real Data)</div>
-                <div class="metric-value mock-data"></div>
-                <div class="metric-value mock-data"></div>
+                <div id="system-metrics">
+                    <p>Loading...</p>
+                </div>
             </div>
 
             <div class="metric-card">
                 <h3>🔐 Security Metrics</h3>
-                <div class="metric-value real-data">Successful Logins: 1,247</div>
-                <div class="metric-value mock-data"></div>
-                <div class="metric-value mock-data"></div>
+                <div id="security-metrics">
+                    <p>Loading...</p>
+                </div>
             </div>
 
             <div class="metric-card">
                 <h3>📊 QR Analytics</h3>
-                <div class="metric-value real-data">Total Scans: 356</div>
-                <div class="metric-value mock-data"></div>
-                <div class="metric-value mock-data"></div>
+                <div id="analytics-metrics">
+                    <p>Loading...</p>
+                </div>
             </div>
 
             <div class="metric-card">
                 <h3>👥 User Activity</h3>
-                <div class="metric-value real-data">Active Sessions: 89</div>
-                <div class="metric-value mock-data"></div>
-                <div class="metric-value mock-data"></div>
+                <div id="user-metrics">
+                    <p>Loading...</p>
+                </div>
             </div>
         </div>
 
@@ -168,16 +166,14 @@
                 <div class="legend-indicator" style="background: #fff3cd; border: 2px solid #ffc107;"></div>
                 <strong>Mock Data:</strong> Casella vuota con sfondo giallo (dati non disponibili)
             </div>
-        </div>
-
-        <div class="json-preview">
+        </div>        <div class="json-preview">
             <h3 style="color: white; margin-top: 0;">🔧 JSON Response Example:</h3>
             <pre><code>{
   <span class="json-key">"cpu_usage_percent"</span>: {
-    <span class="json-key">"value"</span>: <span class="json-real">45.2</span>,
-    <span class="json-key">"is_mock"</span>: <span class="json-real">false</span>,
-    <span class="json-key">"display"</span>: <span class="json-string">"normal"</span>,
-    <span class="json-key">"data_source"</span>: <span class="json-string">"prometheus+database"</span>
+    <span class="json-key">"value"</span>: <span class="json-mock">null</span>,
+    <span class="json-key">"is_mock"</span>: <span class="json-mock">true</span>,
+    <span class="json-key">"display"</span>: <span class="json-string">"empty_yellow"</span>,
+    <span class="json-key">"data_source"</span>: <span class="json-string">"fallback_unavailable"</span>
   },
   <span class="json-key">"memory_usage_percent"</span>: {
     <span class="json-key">"value"</span>: <span class="json-mock">null</span>,
@@ -186,10 +182,10 @@
     <span class="json-key">"data_source"</span>: <span class="json-string">"fallback_unavailable"</span>
   },
   <span class="json-key">"successful_logins_24h"</span>: {
-    <span class="json-key">"value"</span>: <span class="json-real">1247</span>,
-    <span class="json-key">"is_mock"</span>: <span class="json-real">false</span>,
-    <span class="json-key">"display"</span>: <span class="json-string">"normal"</span>,
-    <span class="json-key">"data_source"</span>: <span class="json-string">"prometheus+database"</span>
+    <span class="json-key">"value"</span>: <span class="json-mock">null</span>,
+    <span class="json-key">"is_mock"</span>: <span class="json-mock">true</span>,
+    <span class="json-key">"display"</span>: <span class="json-string">"empty_yellow"</span>,
+    <span class="json-key">"data_source"</span>: <span class="json-string">"fallback_unavailable"</span>
   },
   <span class="json-key">"qr_scans_24h"</span>: {
     <span class="json-key">"value"</span>: <span class="json-mock">null</span>,
@@ -205,8 +201,63 @@
             <p>✅ Chiarezza immediata sui dati reali vs mock<br>
             ✅ Nessun valore hardcoded confuso<br>
             ✅ Facile identificazione di problemi di connessione<br>
-            ✅ Esperienza utente professionale</p>
-        </div>
+            ✅ Esperienza utente professionale</p>        </div>
     </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3003/api/dashboard';
+
+        function createMetricElement(label, value, isMock) {
+            const element = document.createElement('div');
+            element.className = `metric-value ${isMock ? 'mock-data' : 'real-data'}`;
+            
+            if (isMock) {
+                // Empty yellow box for mock data
+                element.innerHTML = '';
+            } else {
+                // Real data display
+                element.textContent = `${label}: ${value}`;
+            }
+            
+            return element;
+        }
+
+        async function loadMetrics(endpoint, containerId) {
+            try {
+                const response = await fetch(`${API_BASE}/${endpoint}`);
+                const data = await response.json();
+                
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                
+                // Extract and display metrics from API response
+                function processMetrics(obj, path = '') {
+                    for (const [key, value] of Object.entries(obj)) {
+                        if (value && typeof value === 'object' && value.hasOwnProperty('is_mock')) {
+                            const label = path ? `${path}.${key}` : key;
+                            const metric = createMetricElement(label, value.value, value.is_mock);
+                            container.appendChild(metric);
+                        } else if (value && typeof value === 'object') {
+                            processMetrics(value, path ? `${path}.${key}` : key);
+                        }
+                    }
+                }
+                
+                processMetrics(data);
+                
+            } catch (error) {
+                console.error(`Error loading ${endpoint}:`, error);
+                document.getElementById(containerId).innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        // Load all metrics from real API endpoints
+        document.addEventListener('DOMContentLoaded', function() {
+            loadMetrics('vm-health', 'system-metrics');
+            loadMetrics('security', 'security-metrics');
+            loadMetrics('insights', 'analytics-metrics');
+            loadMetrics('security', 'user-metrics'); // Use security endpoint for user activity
+        });
+    </script>
 </body>
 </html>

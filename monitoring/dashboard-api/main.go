@@ -1144,21 +1144,19 @@ func getMostActiveUsersFromDB() []UserActivity {
 			}
 		}
 	}
-	
-	// Fallback
-	return []UserActivity{
-		{UserID: "user_001", Username: "john.doe", ActivityCount: 145, LastActive: "2 minutes ago"},
-		{UserID: "user_002", Username: "jane.smith", ActivityCount: 132, LastActive: "5 minutes ago"},
-	}
+		// Fallback - return empty array instead of fake users
+	return []UserActivity{}
 }
 
 func getQRTrendsFromDB() map[string]int {
-	// Note: today and week variables removed as they were declared but not used
+	// Try to get real data from database/prometheus first
+	// If no real data available, return empty map to trigger yellow boxes
 	
 	return map[string]int{
-		"today":         120,
-		"week":          900,
-		"daily_average": 150,
+		// Return 0 values to trigger empty yellow box display
+		"today":         0,
+		"week":          0,
+		"daily_average": 0,
 	}
 }
 
@@ -1330,10 +1328,9 @@ func main() {
 				"events_created_today": qrTrends["today"],
 				"events_created_week":  qrTrends["week"],
 				"daily_average":        qrTrends["daily_average"],
-			},
-			UsagePatterns: map[string]interface{}{
+			},			UsagePatterns: map[string]interface{}{
 				"peak_usage_hour":      requestRate,
-				"system_load":          "normal", // TODO: calcolare da metriche
+				"system_load":          getSystemLoad(), // Get real system load
 			},
 			Metadata: map[string]interface{}{
 				"data_source":        "prometheus+database",
@@ -1400,4 +1397,24 @@ func main() {
 	log.Printf("🎯 Dashboard API listening on port 3003...")
 	log.Printf("📊 Endpoints: /api/dashboard/security, /api/dashboard/vm-health, /api/dashboard/insights")
 	log.Fatal(app.Listen(":3003"))
+}
+
+// getSystemLoad calculates real system load based on CPU usage
+func getSystemLoad() string {
+	cpuUsage := getCpuUsage()
+	if cpuUsage.IsMock {
+		return "unknown" // If no CPU data available
+	}
+	
+	if cpuValue, ok := cpuUsage.Value.(float64); ok {
+		if cpuValue > 80 {
+			return "high"
+		} else if cpuValue > 50 {
+			return "medium"
+		} else {
+			return "low"
+		}
+	}
+	
+	return "unknown"
 }
