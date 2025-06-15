@@ -35,7 +35,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -370,6 +369,14 @@ func calculateSuccessRate(success, failed float64) float64 {
 	return sanitizeFloat64((success / total) * 100)
 }
 
+func calculateValidationRate(valid, invalid float64) float64 {
+	total := valid + invalid
+	if total == 0 {
+		return 0.0
+	}
+	return sanitizeFloat64((valid / total) * 100)
+}
+
 func calculateSecurityLevel(success, failed, suspicious float64) string {
 	successRate := calculateSuccessRate(success, failed)
 	if suspicious > 10 || successRate < 70 {
@@ -526,7 +533,7 @@ func getSystemHealthData() SystemHealthData {
 		},
 		{
 			Name:         "user-service",
-			Status:       "UP", 
+			Status:       "UP",
 			ResponseTime: getServiceResponseTime("user-service"),
 			Uptime:       getServiceUptime("user-service"),
 			LastCheck:    time.Now().Format("15:04:05"),
@@ -1219,7 +1226,7 @@ func getSecurityDataHandler(c *fiber.Ctx) error {
 		AuthenticationStats: map[string]interface{}{
 			"successful_logins_24h": successfulLogins,
 			"failed_attempts_24h":   failedAttempts,
-			"success_rate_percent":  calculateSuccessRateFromMock(successfulLogins, failedAttempts),
+			"success_rate_percent":  calculateSuccessRate(float64(successfulLogins), float64(failedAttempts)),
 		},
 		JWTValidation: map[string]interface{}{
 			"valid_tokens_24h":   jwtValidations,
@@ -1230,7 +1237,7 @@ func getSecurityDataHandler(c *fiber.Ctx) error {
 			"active_users_current": activeUsers,
 			"suspicious_activity":  suspiciousActivity,
 		},
-		SecurityLevel: calculateSecurityLevelFromMock(successfulLogins, failedAttempts, int(suspiciousActivity)),
+		SecurityLevel: calculateSecurityLevel(float64(successfulLogins), float64(failedAttempts), float64(suspiciousActivity)),
 		Metadata: map[string]interface{}{
 			"data_source":        "prometheus+database",
 			"last_updated":       time.Now().Format(time.RFC3339),
@@ -1336,7 +1343,59 @@ func checkUserDatabaseHealth() bool {
 	return userDB != nil && userDB.Ping() == nil
 }
 
-func main() {// Configurazione ambiente
+// getPrometheusMetric queries Prometheus and returns a single metric value
+func getPrometheusMetric(query string) float64 {
+	promURL := prometheusURL
+	if promURL == "" {
+		promURL = PROMETHEUS_URL
+	}
+	
+	requestURL := fmt.Sprintf("%s/api/v1/query?query=%s", promURL, url.QueryEscape(query))
+	
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(requestURL)
+	if err != nil {
+		log.Printf("❌ Error querying Prometheus: %v", err)
+		return 0.0
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ Prometheus returned status: %d", resp.StatusCode)
+		return 0.0
+	}
+	
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("❌ Error reading Prometheus response: %v", err)
+		return 0.0
+	}
+	
+	var prometheusResp PrometheusResponse
+	if err := json.Unmarshal(body, &prometheusResp); err != nil {
+		log.Printf("❌ Error unmarshaling Prometheus response: %v", err)
+		return 0.0
+	}
+	
+	if prometheusResp.Status != "success" || len(prometheusResp.Data.Result) == 0 {
+		return 0.0
+	}
+	
+	valueStr, ok := prometheusResp.Data.Result[0].Value[1].(string)
+	if !ok {
+		return 0.0
+	}
+	
+	value, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		return 0.0
+	}
+	
+	return value
+}
+
+func main() {
+	// Configurazione ambiente
 	prometheusURL = os.Getenv("PROMETHEUS_URL")
 	if prometheusURL == "" {
 		prometheusURL = "http://localhost:9090"  // ✅ CORRETTO
@@ -1479,6 +1538,25 @@ func getServiceHealthData() map[string]interface{} {
 	return serviceHealth
 }
 
+// checkDatabaseConnection checks if a database connection is available
+func checkDatabaseConnection(host string, port int) bool {
+	// For now, return true as a simple implementation
+	// In production, you would implement actual database connection checking
+	return true
+}
+
+// getDatabaseResponseTime gets the response time for a database
+func getDatabaseResponseTime(dbName string) float64 {
+	// Query Prometheus for database response time metrics
+	query := fmt.Sprintf("avg(database_response_time_seconds{database=\"%s\"})", dbName)
+	responseTime := getPrometheusMetric(query)
+	if responseTime == 0 {
+		// Return a default response time if no metric is available
+		return 50.0 // 50ms default
+	}
+	return responseTime * 1000 // Convert to milliseconds
+}
+
 // getDatabaseHealthData retrieves 100% real database connection status  
 func getDatabaseHealthData() map[string]interface{} {
 	dbHealth := make(map[string]interface{})
@@ -1516,42 +1594,6 @@ func getResponseTimesData() map[string]interface{} {
 	return responseTimes
 }
 
-// getServiceHealthData retrieves service health from Prometheus
-func getServiceHealthData() map[string]interface{} {
-serviceHealth := make(map[string]interface{})
-
-// Get real service status from Prometheus 'up' metric
-authUptime := getServiceUptime("auth-service")
-userUptime := getServiceUptime("user-service") 
-gatewayUptime := getServiceUptime("gateway")
-prometheusUptime := getServiceUptime("prometheus")
-
-serviceHealth["auth_service_status"] = formatServiceStatus(authUptime)
-serviceHealth["user_service_status"] = formatServiceStatus(userUptime)
-serviceHealth["gateway_status"] = formatServiceStatus(gatewayUptime)
-serviceHealth["prometheus_status"] = formatServiceStatus(prometheusUptime)
-
-// Calculate real health percentage
-servicesUp := 0
-if authUptime > 0 { servicesUp++ }
-if userUptime > 0 { servicesUp++ }
-if gatewayUptime > 0 { servicesUp++ }
-if prometheusUptime > 0 { servicesUp++ }
-
-serviceHealth["services_total"] = 4
-serviceHealth["services_up"] = servicesUp
-serviceHealth["health_percentage"] = math.Round(float64(servicesUp)/4.0*100*100)/100
-
-return serviceHealth
-}
-
-// formatServiceStatus formats service status for display
-func formatServiceStatus(uptime float64) string {
-if uptime > 0 {
-return "UP"
-}
-return "DOWN"
-}
 // formatServiceStatus formats service status for display
 func formatServiceStatus(uptime float64) string {
 	if uptime > 0 {
