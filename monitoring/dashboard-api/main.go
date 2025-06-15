@@ -1489,6 +1489,8 @@ func main() {
 	}))
 
 	// 📖 Swagger documentation endpoint
+
+	// 📖 Swagger documentation endpoint
 	app.Get("/swagger/*", fiberSwagger.WrapHandler)
 
 	// 🔧 Health check endpoint
@@ -1558,8 +1560,6 @@ func getServiceHealthData() map[string]interface{} {
 	// Check service uptimes from Prometheus
 	authUptime := getServiceUptime("auth-service")
 	userUptime := getServiceUptime("user-service") 
-	gatewayUptime := getServiceUptime("gateway")
-	prometheusUptime := getServiceUptime("prometheus")
 	
 	serviceHealth["auth_service_status"] = formatServiceStatus(authUptime)
 	serviceHealth["user_service_status"] = formatServiceStatus(userUptime)
