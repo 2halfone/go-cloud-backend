@@ -1515,39 +1515,57 @@ func main() {
 func getSystemResourcesData() map[string]interface{} {
 	resources := make(map[string]interface{})
 	
-	// CPU Usage (from node_exporter)
+	// CPU Usage (percentage)
 	cpuUsage := getPrometheusMetric("100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)")
 	if cpuUsage != -1 {
 		resources["cpu_usage_percent"] = math.Round(cpuUsage*100)/100
 	} else {
-		resources["cpu_usage_percent"] = createEmptyYellowBoxWithMessage("CPU data unavailable")
+		resources["cpu_usage_percent"] = 0
 	}
 	
-	// Memory Usage
-	memoryQuery := "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100"
-	memoryUsage := getPrometheusMetric(memoryQuery)
-	if memoryUsage != -1 {
-		resources["memory_usage_percent"] = math.Round(memoryUsage*100)/100
+	// Memory Usage (absolute values in GB)
+	memoryTotalQuery := "node_memory_MemTotal_bytes / 1024 / 1024 / 1024"
+	memoryTotal := getPrometheusMetric(memoryTotalQuery)
+	
+	memoryAvailableQuery := "node_memory_MemAvailable_bytes / 1024 / 1024 / 1024"
+	memoryAvailable := getPrometheusMetric(memoryAvailableQuery)
+	
+	if memoryTotal != -1 && memoryAvailable != -1 {
+		memoryUsed := memoryTotal - memoryAvailable
+		resources["memory_total_gb"] = math.Round(memoryTotal*100)/100
+		resources["memory_used_gb"] = math.Round(memoryUsed*100)/100
+		resources["memory_available_gb"] = math.Round(memoryAvailable*100)/100
 	} else {
-		resources["memory_usage_percent"] = createEmptyYellowBoxWithMessage("Memory data unavailable")
+		resources["memory_total_gb"] = 0
+		resources["memory_used_gb"] = 0
+		resources["memory_available_gb"] = 0
 	}
 	
-	// Disk Usage
-	diskQuery := "(1 - (node_filesystem_avail_bytes{fstype=\"ext4\"} / node_filesystem_size_bytes{fstype=\"ext4\"})) * 100"
-	diskUsage := getPrometheusMetric(diskQuery)
-	if diskUsage != -1 {
-		resources["disk_usage_percent"] = math.Round(diskUsage*100)/100
+	// Disk Usage (absolute values in GB)
+	diskTotalQuery := "node_filesystem_size_bytes{fstype=\"ext4\"} / 1024 / 1024 / 1024"
+	diskTotal := getPrometheusMetric(diskTotalQuery)
+	
+	diskAvailableQuery := "node_filesystem_avail_bytes{fstype=\"ext4\"} / 1024 / 1024 / 1024"
+	diskAvailable := getPrometheusMetric(diskAvailableQuery)
+	
+	if diskTotal != -1 && diskAvailable != -1 {
+		diskUsed := diskTotal - diskAvailable
+		resources["disk_total_gb"] = math.Round(diskTotal*100)/100
+		resources["disk_used_gb"] = math.Round(diskUsed*100)/100
+		resources["disk_available_gb"] = math.Round(diskAvailable*100)/100
 	} else {
-		resources["disk_usage_percent"] = createEmptyYellowBoxWithMessage("Disk data unavailable")
+		resources["disk_total_gb"] = 0
+		resources["disk_used_gb"] = 0
+		resources["disk_available_gb"] = 0
 	}
 	
-	// Network Usage (bytes/sec to Mbps)
+	// Network Usage (in Mbps)
 	networkQuery := "rate(node_network_receive_bytes_total{device=\"eth0\"}[5m]) * 8 / 1024 / 1024"
 	networkUsage := getPrometheusMetric(networkQuery)
 	if networkUsage != -1 {
 		resources["network_usage_mbps"] = math.Round(networkUsage*100)/100
 	} else {
-		resources["network_usage_mbps"] = createEmptyYellowBoxWithMessage("Network data unavailable")
+		resources["network_usage_mbps"] = 0
 	}
 	
 	return resources
