@@ -1452,11 +1452,10 @@ func calculateSecurityLevelFromMock(logins, failures MockDataValue, suspicious i
 		return "LOW_RISK"
 }
 
-func main() {
-	// Configurazione ambiente
+func main() {	// Configurazione ambiente
 	prometheusURL = os.Getenv("PROMETHEUS_URL")
 	if prometheusURL == "" {
-		prometheusURL = "http://prometheus-service:9090"
+		prometheusURL = "http://localhost:9090"  // ✅ CORRETTO
 	}
 
 	authDatabaseURL = os.Getenv("AUTH_DATABASE_URL") 
