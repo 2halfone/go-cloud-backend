@@ -35,6 +35,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,6 +50,23 @@ import (
 
 	_ "dashboard-api/docs" // Import generated docs
 )
+
+// Prometheus client configuration
+const (
+	PROMETHEUS_URL = "http://localhost:9090"
+)
+
+// PrometheusResponse represents the structure of Prometheus API response
+type PrometheusResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		ResultType string `json:"resultType"`
+		Result     []struct {
+			Metric map[string]string `json:"metric"`
+			Value  []interface{}     `json:"value"`
+		} `json:"result"`
+	} `json:"data"`
+}
 
 // Global variables for configuration and database connections
 var (
@@ -71,6 +89,16 @@ type MockDataValue struct {
 func createEmptyYellowBox() MockDataValue {
 	return MockDataValue{
 		Value:      nil,                    // ⚠️ NULL VALUE - Empty box
+		IsMock:     true,                   // 🟡 Mark as mock
+		Display:    "empty_yellow",         // 🟡 Yellow background indicator
+		DataSource: "fallback_unavailable", // Source indicator
+	}
+}
+
+// Helper function to create empty yellow box with custom message
+func createEmptyYellowBoxWithMessage(message string) MockDataValue {
+	return MockDataValue{
+		Value:      message,                // ⚠️ Message for unavailable data
 		IsMock:     true,                   // 🟡 Mark as mock
 		Display:    "empty_yellow",         // 🟡 Yellow background indicator
 		DataSource: "fallback_unavailable", // Source indicator
@@ -1307,29 +1335,16 @@ func getSecurityDataHandler(c *fiber.Ctx) error {
 // @Router /api/dashboard/vm-health [get]
 func getVMHealthHandler(c *fiber.Ctx) error {
 	start := time.Now()
-	log.Println("💻 Collecting VM health metrics...")
-	// Get system resource data
-	systemResourcesData := getSystemHealthData()
+	log.Println("💻 Collecting REAL VM health metrics from Prometheus...")
 	
 	response := VMHealthResponse{
-		SystemResources: map[string]interface{}{
-			"resource_usage": systemResourcesData.ResourceUsage,
-			"performance":    systemResourcesData.Performance,
-		},
-		ServiceHealth: map[string]interface{}{
-			"services":       systemResourcesData.Services,
-			"overall_status": systemResourcesData.OverallStatus,
-		},
-		DatabaseHealth: map[string]interface{}{
-			"auth_db_status": checkAuthDatabaseHealth(),
-			"user_db_status": checkUserDatabaseHealth(),
-		},
-		ResponseTimes: map[string]interface{}{
-			"services": systemResourcesData.Services,
-		},
+		SystemResources: getSystemResourcesData(),
+		ServiceHealth:   getServiceHealthData(),
+		DatabaseHealth:  getDatabaseHealthData(),
+		ResponseTimes:   getResponseTimesData(),
 		Metadata: Metadata{
 			CollectionTimeMs: time.Since(start).Milliseconds(),
-			DataSource:       "prometheus+database",
+			DataSource:       "prometheus+node-exporter+database",
 			LastUpdated:      time.Now().UTC(),
 		},
 	}
@@ -1488,4 +1503,221 @@ func main() {
 	log.Println("🚀 Dashboard API server starting on :3003")
 	log.Println("📖 Swagger documentation available at: http://localhost:3003/swagger/")
 	log.Fatal(app.Listen(":3003"))
+}
+
+// =============================================================================
+// PROMETHEUS INTEGRATION FUNCTIONS FOR REAL METRICS
+// =============================================================================
+
+// getSystemResourcesData retrieves real system metrics from Prometheus
+func getSystemResourcesData() map[string]interface{} {
+	resources := make(map[string]interface{})
+	
+	// CPU Usage (from node_exporter)
+	cpuUsage := getPrometheusMetric("100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)")
+	if cpuUsage != -1 {
+		resources["cpu_usage_percent"] = math.Round(cpuUsage*100)/100
+	} else {
+		resources["cpu_usage_percent"] = createEmptyYellowBoxWithMessage("CPU data unavailable")
+	}
+	
+	// Memory Usage
+	memoryQuery := "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100"
+	memoryUsage := getPrometheusMetric(memoryQuery)
+	if memoryUsage != -1 {
+		resources["memory_usage_percent"] = math.Round(memoryUsage*100)/100
+	} else {
+		resources["memory_usage_percent"] = createEmptyYellowBoxWithMessage("Memory data unavailable")
+	}
+	
+	// Disk Usage
+	diskQuery := "(1 - (node_filesystem_avail_bytes{fstype=\"ext4\"} / node_filesystem_size_bytes{fstype=\"ext4\"})) * 100"
+	diskUsage := getPrometheusMetric(diskQuery)
+	if diskUsage != -1 {
+		resources["disk_usage_percent"] = math.Round(diskUsage*100)/100
+	} else {
+		resources["disk_usage_percent"] = createEmptyYellowBoxWithMessage("Disk data unavailable")
+	}
+	
+	// Network Usage (bytes/sec to Mbps)
+	networkQuery := "rate(node_network_receive_bytes_total{device=\"eth0\"}[5m]) * 8 / 1024 / 1024"
+	networkUsage := getPrometheusMetric(networkQuery)
+	if networkUsage != -1 {
+		resources["network_usage_mbps"] = math.Round(networkUsage*100)/100
+	} else {
+		resources["network_usage_mbps"] = createEmptyYellowBoxWithMessage("Network data unavailable")
+	}
+	
+	return resources
+}
+
+// getServiceHealthData retrieves service health from Prometheus
+func getServiceHealthData() map[string]interface{} {
+	serviceHealth := make(map[string]interface{})
+	
+	// Check service uptimes from Prometheus
+	authUptime := getServiceUptime("auth-service")
+	userUptime := getServiceUptime("user-service") 
+	gatewayUptime := getServiceUptime("gateway")
+	prometheusUptime := getServiceUptime("prometheus")
+	
+	serviceHealth["auth_service_status"] = formatServiceStatus(authUptime)
+	serviceHealth["user_service_status"] = formatServiceStatus(userUptime)
+	serviceHealth["gateway_status"] = formatServiceStatus(gatewayUptime)
+	serviceHealth["prometheus_status"] = formatServiceStatus(prometheusUptime)
+	
+	// Count total services and services up
+	servicesUp := 0
+	totalServices := 4
+	if authUptime > 0 { servicesUp++ }
+	if userUptime > 0 { servicesUp++ }
+	if gatewayUptime > 0 { servicesUp++ }
+	if prometheusUptime > 0 { servicesUp++ }
+	
+	serviceHealth["services_total"] = totalServices
+	serviceHealth["services_up"] = servicesUp
+	serviceHealth["health_percentage"] = math.Round(float64(servicesUp)/float64(totalServices)*100*100)/100
+	
+	return serviceHealth
+}
+
+// getDatabaseHealthData retrieves database connection status
+func getDatabaseHealthData() map[string]interface{} {
+	dbHealth := make(map[string]interface{})
+	
+	// Check database connections
+	authDBStatus := checkDatabaseConnection("go-cloud-backend_auth-db_1", 5432)
+	userDBStatus := checkDatabaseConnection("go-cloud-backend_user-db_1", 5432)
+	
+	if authDBStatus {
+		dbHealth["auth_db_status"] = "connected"
+		dbHealth["auth_db_response_time_ms"] = getDatabaseResponseTime("auth")
+	} else {		dbHealth["auth_db_status"] = createEmptyYellowBoxWithMessage("Auth DB unreachable")
+		dbHealth["auth_db_response_time_ms"] = createEmptyYellowBoxWithMessage("N/A")
+	}
+	
+	if userDBStatus {
+		dbHealth["user_db_status"] = "connected"  
+		dbHealth["user_db_response_time_ms"] = getDatabaseResponseTime("user")
+	} else {		dbHealth["user_db_status"] = createEmptyYellowBoxWithMessage("User DB unreachable")
+		dbHealth["user_db_response_time_ms"] = createEmptyYellowBoxWithMessage("N/A")
+	}
+	
+	return dbHealth
+}
+
+// getResponseTimesData retrieves response times from Prometheus
+func getResponseTimesData() map[string]interface{} {
+	responseTimes := make(map[string]interface{})
+	
+	// HTTP request duration metrics (in milliseconds)
+	authResponseTime := getPrometheusMetric("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"auth-service\"}[5m])) * 1000")
+	userResponseTime := getPrometheusMetric("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"user-service\"}[5m])) * 1000")
+	gatewayResponseTime := getPrometheusMetric("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"gateway\"}[5m])) * 1000")
+	
+	if authResponseTime != -1 {
+		responseTimes["auth_service_ms"] = math.Round(authResponseTime*100)/100
+	} else {
+		responseTimes["auth_service_ms"] = createEmptyYellowBoxWithMessage("Auth response time unavailable")
+	}
+	
+	if userResponseTime != -1 {
+		responseTimes["user_service_ms"] = math.Round(userResponseTime*100)/100
+	} else {
+		responseTimes["user_service_ms"] = createEmptyYellowBoxWithMessage("User response time unavailable")
+	}
+	
+	if gatewayResponseTime != -1 {
+		responseTimes["gateway_ms"] = math.Round(gatewayResponseTime*100)/100
+	} else {
+		responseTimes["gateway_ms"] = createEmptyYellowBoxWithMessage("Gateway response time unavailable")
+	}
+	
+	return responseTimes
+}
+
+// getPrometheusMetric queries Prometheus and returns a single metric value
+func getPrometheusMetric(query string) float64 {
+	url := fmt.Sprintf("%s/api/v1/query?query=%s", PROMETHEUS_URL, url.QueryEscape(query))
+	
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("❌ Error querying Prometheus: %v", err)
+		return -1
+	}
+	defer resp.Body.Close()
+	
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("❌ Error reading Prometheus response: %v", err)
+		return -1
+	}
+	
+	var prometheusResp PrometheusResponse
+	if err := json.Unmarshal(body, &prometheusResp); err != nil {
+		log.Printf("❌ Error parsing Prometheus response: %v", err)
+		return -1
+	}
+	
+	if prometheusResp.Status != "success" || len(prometheusResp.Data.Result) == 0 {
+		log.Printf("⚠️ No data returned from Prometheus for query: %s", query)
+		return -1
+	}
+	
+	// Extract the value (second element in the value array)
+	valueStr, ok := prometheusResp.Data.Result[0].Value[1].(string)
+	if !ok {
+		log.Printf("❌ Invalid value format from Prometheus")
+		return -1
+	}
+	
+	value, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		log.Printf("❌ Error parsing float value: %v", err)
+		return -1
+	}
+	
+	log.Printf("✅ Prometheus metric retrieved: %f", value)
+	return value
+}
+
+// getServiceUptime gets uptime status for a specific service
+// formatServiceStatus formats service status for display
+func formatServiceStatus(uptime float64) string {
+	if uptime > 0 {
+		return "UP"
+	}
+	return "DOWN"
+}
+
+// checkDatabaseConnection checks if database is reachable
+func checkDatabaseConnection(host string, port int) bool {
+	timeout := time.Second * 2
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
+}
+
+// getDatabaseResponseTime measures database response time
+func getDatabaseResponseTime(dbType string) float64 {
+	start := time.Now()
+	var host string
+	if dbType == "auth" {
+		host = "go-cloud-backend_auth-db_1"
+	} else {
+		host = "go-cloud-backend_user-db_1"
+	}
+	
+	timeout := time.Second * 2
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:5432", host), timeout)
+	if err != nil {
+		return -1
+	}
+	defer conn.Close()
+	
+	duration := time.Since(start)
+	return math.Round(float64(duration.Nanoseconds())/1000000*100) / 100 // Convert to milliseconds
 }
