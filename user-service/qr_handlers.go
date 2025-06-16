@@ -124,7 +124,7 @@ func generateQRHandler(c *fiber.Ctx) error {
     }
     
     // Record QR event creation metric
-    metrics.QREventsGenerated.WithLabelValues("user-service").Inc()
+    metrics.QREventsTotal.WithLabelValues("user-service").Inc()
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":         "QR generato con successo",
