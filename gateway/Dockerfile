@@ -2,8 +2,15 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
-COPY go.mod ./
-COPY . .
+
+# Copy shared module
+COPY shared/ ./shared/
+
+# Copy gateway files
+COPY gateway/go.mod ./
+COPY gateway/go.sum ./
+COPY gateway/ ./
+
 RUN go mod tidy
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
