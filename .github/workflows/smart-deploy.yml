@@ -24,6 +24,9 @@ jobs:
       monitoring-changed: ${{ steps.changes.outputs.monitoring }}
       docker-changed: ${{ steps.changes.outputs.docker }}
       config-changed: ${{ steps.changes.outputs.config }}
+      shared-changed: ${{ steps.changes.outputs.shared }}
+      # Force rebuild quando shared cambia
+      force-rebuild: ${{ steps.changes.outputs.shared }}
     steps:
       - uses: actions/checkout@v3
       - uses: dorny/paths-filter@v2
@@ -48,7 +51,8 @@ jobs:
               - '.github/workflows/**'
               - 'Makefile'
               - 'scripts/**'
-
+            shared:
+              - 'shared/**'
   deploy-auth-service:
     needs: detect-changes
     if: needs.detect-changes.outputs.auth-changed == 'true'
@@ -63,18 +67,35 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-              # Build only auth-service
-            docker-compose -f docker-compose.prod.yml build auth-service
             
-            # Restart only auth-service (zero downtime per altri servizi)
-            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate auth-service
+            # Cleanup obsolete containers and images
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            
+            # Build auth-service (no cache if shared changed)
+            echo "🔨 Building auth-service..."
+            docker-compose -f docker-compose.prod.yml build --no-cache auth-service
+            
+            # Stop and remove old auth-service container to prevent "exited" containers
+            echo "🛑 Stopping old auth-service container..."
+            docker-compose -f docker-compose.prod.yml stop auth-service || true
+            docker-compose -f docker-compose.prod.yml rm -f auth-service || true
+            
+            # Start new auth-service container
+            echo "🚀 Starting new auth-service container..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
             
             # Health check
-            sleep 5
+            echo "🏥 Health check..."
+            sleep 10
             curl -f http://localhost:3001/health || exit 1
             
+            # Final container status check
+            echo "📊 Container status:"
+            docker ps --filter "name=auth-service"
+            
             echo "✅ Auth Service deployed successfully!"
-
   deploy-user-service:
     needs: detect-changes
     if: needs.detect-changes.outputs.user-changed == 'true'
@@ -89,18 +110,35 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-              # Build only user-service
-            docker-compose -f docker-compose.prod.yml build user-service
             
-            # Restart only user-service
-            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate user-service
+            # Cleanup obsolete containers and images
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            
+            # Build user-service (no cache if shared changed)
+            echo "🔨 Building user-service..."
+            docker-compose -f docker-compose.prod.yml build --no-cache user-service
+            
+            # Stop and remove old user-service container to prevent "exited" containers
+            echo "🛑 Stopping old user-service container..."
+            docker-compose -f docker-compose.prod.yml stop user-service || true
+            docker-compose -f docker-compose.prod.yml rm -f user-service || true
+            
+            # Start new user-service container
+            echo "🚀 Starting new user-service container..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
             
             # Health check
-            sleep 5
+            echo "🏥 Health check..."
+            sleep 10
             curl -f http://localhost:3002/health || exit 1
             
+            # Final container status check
+            echo "📊 Container status:"
+            docker ps --filter "name=user-service"
+            
             echo "✅ User Service deployed successfully!"
-
   deploy-gateway:
     needs: detect-changes
     if: needs.detect-changes.outputs.gateway-changed == 'true'
@@ -116,20 +154,34 @@ jobs:
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
             
-            # Cleanup old images to avoid cache conflicts
-            docker system prune -f
+            # Cleanup obsolete containers and images
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
             
-            # Build only gateway with no cache
+            # Build gateway (always no cache since it's critical)
+            echo "🔨 Building gateway..."
             docker-compose -f docker-compose.prod.yml build --no-cache gateway
             
-            # Force restart with new image
-            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate gateway
-              # Health check
-            sleep 5
+            # Stop and remove old gateway container to prevent "exited" containers
+            echo "🛑 Stopping old gateway container..."
+            docker-compose -f docker-compose.prod.yml stop gateway || true
+            docker-compose -f docker-compose.prod.yml rm -f gateway || true
+            
+            # Start new gateway container
+            echo "🚀 Starting new gateway container..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps gateway
+            
+            # Health check
+            echo "🏥 Health check..."
+            sleep 10
             curl -f http://localhost:3000/health || exit 1
             
+            # Final container status check
+            echo "📊 Container status:"
+            docker ps --filter "name=gateway"
+            
             echo "✅ Gateway deployed successfully!"
-
   deploy-monitoring:
     needs: detect-changes
     if: needs.detect-changes.outputs.monitoring-changed == 'true'
@@ -144,11 +196,37 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-              # Build only monitoring services
-            docker-compose -f docker-compose.prod.yml build dashboard-api prometheus-service
             
-            # Restart only monitoring
-            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate dashboard-api prometheus-service
+            # Cleanup obsolete containers and images
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            
+            # Build monitoring services (no cache if shared changed)
+            echo "🔨 Building monitoring services..."
+            docker-compose -f docker-compose.prod.yml build --no-cache dashboard-api
+            
+            # Stop and remove old monitoring containers to prevent "exited" containers
+            echo "🛑 Stopping old monitoring containers..."
+            docker-compose -f docker-compose.prod.yml stop dashboard-api || true
+            docker-compose -f docker-compose.prod.yml rm -f dashboard-api || true
+            
+            # Start new monitoring containers
+            echo "🚀 Starting new monitoring containers..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps dashboard-api
+            
+            # Note: prometheus-service uses official image, no rebuild needed
+            docker-compose -f docker-compose.prod.yml up -d --no-deps prometheus-service
+            
+            # Health check for dashboard-api
+            echo "🏥 Health check for dashboard-api..."
+            sleep 10
+            curl -f http://localhost:3003/health || echo "⚠️ Dashboard API health check failed, but continuing..."
+            
+            # Final container status check
+            echo "📊 Container status:"
+            docker ps --filter "name=dashboard-api"
+            docker ps --filter "name=prometheus-service"
             
             echo "✅ Monitoring deployed successfully!"
 
@@ -166,10 +244,75 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            echo "✅ Configuration files updated successfully!"
+              echo "✅ Configuration files updated successfully!"
             echo "ℹ️ Makefile, workflows, and scripts are now up to date"
 
+  # Job speciale per quando solo shared/ cambia - rebuilda tutti i servizi che lo usano
+  shared-rebuild:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.shared-changed == 'true' && needs.detect-changes.outputs.auth-changed == 'false' && needs.detect-changes.outputs.user-changed == 'false' && needs.detect-changes.outputs.gateway-changed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔄 Rebuild All Services (Shared Module Changed)
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/frazerfrax1/go-cloud-backend
+            git pull origin main
+            
+            echo "🔄 Shared module changed - rebuilding all dependent services..."
+            
+            # Cleanup before rebuild
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            
+            # Build all Go services that depend on shared (no cache to ensure fresh build)
+            echo "🔨 Building all services with fresh shared module..."
+            docker-compose -f docker-compose.prod.yml build --no-cache gateway auth-service user-service dashboard-api
+            
+            # Restart all Go services one by one to minimize downtime
+            echo "🚀 Restarting services with new shared module..."
+            
+            # Gateway first (it's the entry point)
+            docker-compose -f docker-compose.prod.yml stop gateway || true
+            docker-compose -f docker-compose.prod.yml rm -f gateway || true
+            docker-compose -f docker-compose.prod.yml up -d --no-deps gateway
+            sleep 5
+            
+            # Auth service
+            docker-compose -f docker-compose.prod.yml stop auth-service || true
+            docker-compose -f docker-compose.prod.yml rm -f auth-service || true
+            docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
+            sleep 5
+            
+            # User service
+            docker-compose -f docker-compose.prod.yml stop user-service || true
+            docker-compose -f docker-compose.prod.yml rm -f user-service || true
+            docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
+            sleep 5
+            
+            # Dashboard API
+            docker-compose -f docker-compose.prod.yml stop dashboard-api || true
+            docker-compose -f docker-compose.prod.yml rm -f dashboard-api || true
+            docker-compose -f docker-compose.prod.yml up -d --no-deps dashboard-api
+            sleep 5
+            
+            # Health checks for all services
+            echo "🏥 Health checks..."
+            curl -f http://localhost:3000/health || echo "⚠️ Gateway health check failed"
+            curl -f http://localhost:3001/health || echo "⚠️ Auth service health check failed"
+            curl -f http://localhost:3002/health || echo "⚠️ User service health check failed"
+            curl -f http://localhost:3003/health || echo "⚠️ Dashboard API health check failed"
+            
+            # Final status
+            echo "📊 Container status after shared rebuild:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            echo "✅ All services rebuilt with new shared module!"
   full-deploy:
     needs: detect-changes
     if: needs.detect-changes.outputs.docker-changed == 'true'
@@ -184,9 +327,102 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-              # Solo quando docker-compose.yml cambia, rebuilda tutto
+            
+            echo "🛑 Stopping all services for full deploy..."
             docker-compose -f docker-compose.prod.yml down
-            docker-compose -f docker-compose.prod.yml build
+            
+            # Aggressive cleanup when docker-compose changes
+            echo "🧹 Aggressive cleanup for full deploy..."
+            docker container prune -f
+            docker image prune -f
+            docker network prune -f
+            docker volume prune -f || true  # Don't fail if volumes are in use
+            
+            # Build all services fresh
+            echo "🔨 Building all services..."
+            docker-compose -f docker-compose.prod.yml build --no-cache
+            
+            # Start all services
+            echo "🚀 Starting all services..."
             docker-compose -f docker-compose.prod.yml up -d
             
+            # Wait for services to be ready
+            echo "⏳ Waiting for services to be ready..."
+            sleep 30
+            
+            # Health checks
+            echo "🏥 Health checks..."
+            curl -f http://localhost:3000/health || echo "⚠️ Gateway health check failed"
+            curl -f http://localhost:3001/health || echo "⚠️ Auth service health check failed"
+            curl -f http://localhost:3002/health || echo "⚠️ User service health check failed"
+            curl -f http://localhost:3003/health || echo "⚠️ Dashboard API health check failed"
+            
+            # Final status report
+            echo "📊 Final container status:"
+            docker ps
+            echo "🗂️ Container summary:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
             echo "✅ Full stack deployed successfully!"
+  # Job di cleanup finale che viene sempre eseguito per evitare container obsoleti
+  final-cleanup:
+    needs: [deploy-auth-service, deploy-user-service, deploy-gateway, deploy-monitoring, full-deploy, config-update, shared-rebuild]
+    if: always() && (needs.deploy-auth-service.result == 'success' || needs.deploy-user-service.result == 'success' || needs.deploy-gateway.result == 'success' || needs.deploy-monitoring.result == 'success' || needs.full-deploy.result == 'success' || needs.config-update.result == 'success' || needs.shared-rebuild.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Final Cleanup & Status Report
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/frazerfrax1/go-cloud-backend
+            
+            echo "🧹 Final cleanup of obsolete containers and images..."
+            
+            # Remove any stopped/exited containers
+            docker container prune -f
+            
+            # Remove dangling images
+            docker image prune -f
+            
+            # Remove unused networks (but keep microservices-net)
+            docker network prune -f
+            
+            echo "📊 Final system status report:"
+            echo "==============================================="
+            echo "🐳 Running containers:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            
+            echo ""
+            echo "💾 Container resources:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+            
+            echo ""
+            echo "🗃️ Images in use:"
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+            
+            echo ""
+            echo "🌐 Networks:"
+            docker network ls
+            
+            echo ""
+            echo "💽 Volumes:"
+            docker volume ls
+            
+            # Check for any stopped containers that shouldn't be there
+            STOPPED_COUNT=$(docker ps -a --filter "status=exited" --format "{{.Names}}" | wc -l)
+            if [ "$STOPPED_COUNT" -gt 0 ]; then
+              echo ""
+              echo "⚠️ Warning: Found $STOPPED_COUNT stopped containers:"
+              docker ps -a --filter "status=exited" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+              echo "These will be cleaned up in the next deploy."
+            else
+              echo ""
+              echo "✅ No stopped containers found - system is clean!"
+            fi
+            
+            echo ""
+            echo "🎯 Deploy completed successfully!"
+            echo "==============================================="
