@@ -33,12 +33,11 @@ services:
       - auth_db_data:/var/lib/postgresql/data
     networks:
       - microservices-net
-
   # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
-      context: ./auth-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./auth-service/Dockerfile
     ports:
       - "3001:3001"
     environment:
@@ -68,12 +67,11 @@ services:
       - user_db_data:/var/lib/postgresql/data
     networks:
       - microservices-net
-
   # --- User Service (aggiornato con database) ---
   user-service:
     build:
-      context: ./user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./user-service/Dockerfile
     ports:
       - "3002:3002"
     environment:

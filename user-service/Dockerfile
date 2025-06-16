@@ -2,10 +2,11 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
-COPY go.mod ./
-COPY . .
+COPY shared/ ./shared/
+COPY user-service/go.mod user-service/go.sum ./
 RUN go mod tidy
 RUN go mod download
+COPY user-service/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage

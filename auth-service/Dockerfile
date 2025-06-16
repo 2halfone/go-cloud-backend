@@ -2,10 +2,11 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
+COPY shared/ ./shared/
+COPY auth-service/go.mod auth-service/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY auth-service/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage
