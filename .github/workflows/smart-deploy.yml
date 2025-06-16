@@ -8,6 +8,7 @@ on:
       - 'user-service/**'
       - 'gateway/**'
       - 'monitoring/**'
+      - 'shared/**'
       - 'docker-compose.prod.yml'
       - '.github/workflows/**'
       - 'Makefile'
@@ -31,10 +32,13 @@ jobs:
           filters: |
             auth:
               - 'auth-service/**'
+              - 'shared/**'
             user:
               - 'user-service/**'
+              - 'shared/**'
             gateway:
               - 'gateway/**'
+              - 'shared/**'
             monitoring:
               - 'monitoring/**'
             docker:
@@ -117,10 +121,9 @@ jobs:
             
             # Restart only gateway
             docker-compose -f docker-compose.prod.yml up -d --no-deps gateway
-            
-            # Health check
+              # Health check
             sleep 5
-            curl -f http://localhost:8080/health || exit 1
+            curl -f http://localhost:3000/health || exit 1
             
             echo "✅ Gateway deployed successfully!"
 
