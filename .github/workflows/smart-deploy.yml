@@ -67,7 +67,7 @@ jobs:
             docker-compose -f docker-compose.prod.yml build auth-service
             
             # Restart only auth-service (zero downtime per altri servizi)
-            docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate auth-service
             
             # Health check
             sleep 5
@@ -93,7 +93,7 @@ jobs:
             docker-compose -f docker-compose.prod.yml build user-service
             
             # Restart only user-service
-            docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate user-service
             
             # Health check
             sleep 5
@@ -115,12 +115,11 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Build only gateway
+              # Build only gateway
             docker-compose -f docker-compose.prod.yml build gateway
             
-            # Restart only gateway
-            docker-compose -f docker-compose.prod.yml up -d --no-deps gateway
+            # Force restart with new image
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate gateway
               # Health check
             sleep 5
             curl -f http://localhost:3000/health || exit 1
@@ -145,7 +144,7 @@ jobs:
             docker-compose -f docker-compose.prod.yml build dashboard-api prometheus-service
             
             # Restart only monitoring
-            docker-compose -f docker-compose.prod.yml up -d --no-deps dashboard-api prometheus-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate dashboard-api prometheus-service
             
             echo "✅ Monitoring deployed successfully!"
 
