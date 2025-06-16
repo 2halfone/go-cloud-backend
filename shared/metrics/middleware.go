@@ -36,6 +36,15 @@ var (
 		},
 		[]string{"status", "service"},
 	)
+
+	JWTValidationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "jwt_validation_total",
+			Help: "Total number of JWT token validations",
+		},
+		[]string{"status", "service"},
+	)
+
 	// QR Code Metrics
 	QRScansTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
