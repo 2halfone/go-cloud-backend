@@ -59,12 +59,11 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Build only auth-service
-            docker-compose build auth-service
+              # Build only auth-service
+            docker-compose -f docker-compose.prod.yml build auth-service
             
             # Restart only auth-service (zero downtime per altri servizi)
-            docker-compose up -d --no-deps auth-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
             
             # Health check
             sleep 5
@@ -86,12 +85,11 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Build only user-service
-            docker-compose build user-service
+              # Build only user-service
+            docker-compose -f docker-compose.prod.yml build user-service
             
             # Restart only user-service
-            docker-compose up -d --no-deps user-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
             
             # Health check
             sleep 5
@@ -115,10 +113,10 @@ jobs:
             git pull origin main
             
             # Build only gateway
-            docker-compose build gateway
+            docker-compose -f docker-compose.prod.yml build gateway
             
             # Restart only gateway
-            docker-compose up -d --no-deps gateway
+            docker-compose -f docker-compose.prod.yml up -d --no-deps gateway
             
             # Health check
             sleep 5
@@ -140,12 +138,11 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Build only monitoring services
-            docker-compose build dashboard-api prometheus-service
+              # Build only monitoring services
+            docker-compose -f docker-compose.prod.yml build dashboard-api prometheus-service
             
             # Restart only monitoring
-            docker-compose up -d --no-deps dashboard-api prometheus-service
+            docker-compose -f docker-compose.prod.yml up -d --no-deps dashboard-api prometheus-service
             
             echo "✅ Monitoring deployed successfully!"
 
@@ -181,10 +178,9 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Solo quando docker-compose.yml cambia, rebuilda tutto
-            docker-compose down
-            docker-compose build
-            docker-compose up -d
+              # Solo quando docker-compose.yml cambia, rebuilda tutto
+            docker-compose -f docker-compose.prod.yml down
+            docker-compose -f docker-compose.prod.yml build
+            docker-compose -f docker-compose.prod.yml up -d
             
             echo "✅ Full stack deployed successfully!"
