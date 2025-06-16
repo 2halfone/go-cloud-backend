@@ -13,7 +13,6 @@ import (
     "os"
     "strconv"
     "strings"
-    "sync"
     "time"
 
     "github.com/gofiber/fiber/v2"
@@ -29,76 +28,39 @@ import (
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// Metrics registration once
+// Shared metrics definitions (must match shared/metrics)
 var (
-    metricsOnce sync.Once
-    httpRequestsTotal *prometheus.CounterVec
-    httpRequestDuration *prometheus.HistogramVec
-    authAttemptsTotal *prometheus.CounterVec
-    activeUsers prometheus.Gauge
-    databaseConnections *prometheus.GaugeVec
-    systemErrorsTotal *prometheus.CounterVec
+    HTTPRequestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status_code", "service"},
+    )
+
+    HTTPRequestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds", 
+            Help:    "Duration of HTTP requests in seconds",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "endpoint", "service"},
+    )
+
+    AuthAttemptsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "auth_attempts_total",
+            Help: "Total number of authentication attempts",
+        },
+        []string{"status", "service"},
+    )
 )
 
-// Initialize metrics once
-func initMetrics() {
-    metricsOnce.Do(func() {
-        httpRequestsTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "http_requests_total",
-                Help: "Total number of HTTP requests",
-            },
-            []string{"method", "endpoint", "status_code", "service"},
-        )
-
-        httpRequestDuration = prometheus.NewHistogramVec(
-            prometheus.HistogramOpts{
-                Name:    "http_request_duration_seconds",
-                Help:    "Duration of HTTP requests in seconds",
-                Buckets: prometheus.DefBuckets,
-            },
-            []string{"method", "endpoint", "service"},
-        )
-
-        authAttemptsTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "auth_attempts_total",
-                Help: "Total number of authentication attempts",
-            },
-            []string{"status", "service"},
-        )
-
-        activeUsers = prometheus.NewGauge(
-            prometheus.GaugeOpts{
-                Name: "active_users_total",
-                Help: "Number of active users",
-            },
-        )
-
-        databaseConnections = prometheus.NewGaugeVec(
-            prometheus.GaugeOpts{
-                Name: "database_connections_active",
-                Help: "Number of active database connections",
-            },
-            []string{"service", "database"},
-        )
-
-        systemErrorsTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "system_errors_total",
-                Help: "Total number of system errors",
-            },
-            []string{"service", "error_type"},
-        )
-
-        // Register metrics only once
-        prometheus.MustRegister(httpRequestsTotal)
-        prometheus.MustRegister(httpRequestDuration)
-        prometheus.MustRegister(authAttemptsTotal)
-        prometheus.MustRegister(activeUsers)
-        prometheus.MustRegister(databaseConnections)
-        prometheus.MustRegister(systemErrorsTotal)
-    })
+func init() {
+    // Register metrics
+    prometheus.MustRegister(HTTPRequestsTotal)
+    prometheus.MustRegister(HTTPRequestDuration)
+    prometheus.MustRegister(AuthAttemptsTotal)
 }
 
 // Metrics middleware for HTTP requests
@@ -110,44 +72,21 @@ func metricsMiddleware() fiber.Handler {
         err := c.Next()
 
         duration := time.Since(start)
-        statusCode := strconv.Itoa(c.Response().StatusCode())
-
-        // Record metrics
-        httpRequestsTotal.WithLabelValues(
+        statusCode := strconv.Itoa(c.Response().StatusCode())        // Record metrics using shared-compatible metrics
+        HTTPRequestsTotal.WithLabelValues(
             c.Method(),
             c.Path(),
             statusCode,
             "auth-service",
         ).Inc()
 
-        httpRequestDuration.WithLabelValues(
+        HTTPRequestDuration.WithLabelValues(
             c.Method(),
             c.Path(),
             "auth-service",
         ).Observe(duration.Seconds())
 
         return err
-    }
-}
-
-// Update active users count
-func updateActiveUsersCount() {
-    db := database.DB
-    if db != nil {
-        var count int
-        query := `SELECT COUNT(*) FROM users WHERE last_login >= NOW() - INTERVAL '30 minutes'`
-        if err := db.QueryRow(query).Scan(&count); err == nil {
-            activeUsers.Set(float64(count))
-        }
-    }
-}
-
-// Update database connections count
-func updateDatabaseConnections() {
-    db := database.DB
-    if db != nil {
-        stats := db.Stats()
-        databaseConnections.WithLabelValues("auth-service", "auth_db").Set(float64(stats.OpenConnections))
     }
 }
 
@@ -291,7 +230,7 @@ func registerHandler(c *fiber.Ctx) error {
     log.Printf("REGISTER_SUCCESS: user_id=%d, email=%s, username=%s", userID, req.Email, finalUsername)
     
     // Record successful registration metric
-    authAttemptsTotal.WithLabelValues("register_success", "auth-service").Inc()
+    AuthAttemptsTotal.WithLabelValues("register_success", "auth-service").Inc()
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message": "Registrazione avvenuta con successo",
@@ -346,18 +285,16 @@ func loginHandler(c *fiber.Ctx) error {
     
     if err == sql.ErrNoRows {
         log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
-        // Log failed login attempt
-        go models.LogAuthActionDetailed(identifier, "", "login_failed_user_not_found", c.IP(), c.Get("User-Agent"), false)
+        // Log failed login attempt        go models.LogAuthActionDetailed(identifier, "", "login_failed_user_not_found", c.IP(), c.Get("User-Agent"), false)
         // Record failed login metric
-        authAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
+        AuthAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
-    } else if err != nil {
-        log.Printf("LOGIN_ERROR: Database query failed - %v", err)
-        // Record system error metric
-        systemErrorsTotal.WithLabelValues("auth-service", "database_error").Inc()
+    } else if err != nil {        log.Printf("LOGIN_ERROR: Database query failed - %v", err)
+        // TODO: Record system error metric when implemented
+        // systemErrorsTotal.WithLabelValues("auth-service", "database_error").Inc()
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore interno del server",
             "code":  "DATABASE_ERROR",
@@ -367,10 +304,9 @@ func loginHandler(c *fiber.Ctx) error {
     // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
         log.Printf("LOGIN_FAILED: Invalid password for identifier '%s'", identifier)
-        // Log failed login attempt with wrong password
-        go models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false)
+        // Log failed login attempt with wrong password        go models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false)
         // Record failed login metric
-        authAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
+        AuthAttemptsTotal.WithLabelValues("failed", "auth-service").Inc()
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
@@ -399,9 +335,8 @@ func loginHandler(c *fiber.Ctx) error {
     
     // Log the successful authentication with details
     go models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true)
-    
-    // Record successful login metric
-    authAttemptsTotal.WithLabelValues("success", "auth-service").Inc()
+      // Record successful login metric
+    AuthAttemptsTotal.WithLabelValues("success", "auth-service").Inc()
 
     return c.JSON(fiber.Map{
         "token":        tokenString,        "access_token": tokenString, // Per compatibilità Flutter
@@ -674,9 +609,6 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
 }
 
 func main() {
-    // Initialize metrics first
-    initMetrics()
-    
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
     if jwtSecretEnv == "" {
@@ -698,19 +630,11 @@ func main() {
         AllowHeaders:     "Origin,Content-Type,Accept,Authorization,X-Request-ID,X-Forwarded-For,X-Gateway-Request",
         AllowCredentials: true,
         MaxAge:           300, // 5 minuti
-    }))
-
-    // Start periodic metrics updates
-    go func() {
-        for {
-            time.Sleep(30 * time.Second)
-            updateActiveUsersCount()
-            updateDatabaseConnections()
-        }
-    }()
+    }))    // Start periodic metrics updates - removed for simplicity
+    // Auth service focuses on authentication metrics only
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
-    // app.Use(gatewayOnly)    // Health endpoint (pubblico)
+    // app.Use(gatewayOnly)// Health endpoint (pubblico)
     app.Get("/health", func(c *fiber.Ctx) error {
         return c.JSON(fiber.Map{
             "status":    "healthy",
