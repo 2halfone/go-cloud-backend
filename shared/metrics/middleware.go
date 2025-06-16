@@ -73,6 +73,15 @@ var (
 		[]string{"service", "error_type"},
 	)
 
+	// Attendance Events Metrics
+	AttendanceEventsActive = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "attendance_events_active",
+			Help: "Number of active attendance events",
+		},
+		[]string{"service"},
+	)
+
 	// Gateway-specific metrics
 	ProxyRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
