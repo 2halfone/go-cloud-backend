@@ -166,7 +166,7 @@ func RequestResponseLogger() fiber.Handler {
     }
 }
 
-// SecurityHeaders middleware per aggiungere header di sicurezza
+// SecurityHeaders middleware per aggiungere header di sicurezza.
 func SecurityHeaders() fiber.Handler {
     return func(c *fiber.Ctx) error {
         c.Set("X-Content-Type-Options", "nosniff")
