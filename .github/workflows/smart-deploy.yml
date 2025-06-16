@@ -115,8 +115,12 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-              # Build only gateway
-            docker-compose -f docker-compose.prod.yml build gateway
+            
+            # Cleanup old images to avoid cache conflicts
+            docker system prune -f
+            
+            # Build only gateway with no cache
+            docker-compose -f docker-compose.prod.yml build --no-cache gateway
             
             # Force restart with new image
             docker-compose -f docker-compose.prod.yml up -d --no-deps --force-recreate gateway

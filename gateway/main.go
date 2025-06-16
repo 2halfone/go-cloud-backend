@@ -28,22 +28,6 @@ import (
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// Gateway-specific metrics (non-duplicate)
-var (
-    JwtValidationTotal = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "jwt_validation_total",
-            Help: "Total number of JWT validations",
-        },
-        []string{"status", "service"},
-    )
-)
-
-func init() {
-    // Register only gateway-specific metrics
-    prometheus.MustRegister(JwtValidationTotal)
-}
-
 // Helper function to determine target service from path
 func getTargetService(path string) string {
     if strings.HasPrefix(path, "/auth/") {
@@ -418,12 +402,18 @@ func main() {
     // -------------------------------------------------------
     // 3) Middleware JWT per rotte protette
     // -------------------------------------------------------
-    
-    // Tutte le altre rotte richiedono JWT valido
+      // Tutte le altre rotte richiedono JWT valido
     app.Use(jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
     }))
+
+    // Middleware per tracciare validazioni JWT riuscite
+    app.Use(func(c *fiber.Ctx) error {
+        // Se arriviamo qui, la validazione JWT è andata a buon fine
+        metrics.JWTValidationTotal.WithLabelValues("success", "gateway").Inc()
+        return c.Next()
+    })
 
     // -------------------------------------------------------
     // 4) Rotte protette con JWT obbligatorio
@@ -623,7 +613,7 @@ func jwtError(c *fiber.Ctx, err error) error {
         err.Error(), c.Path(), c.Method(), c.IP(), c.Get("User-Agent"))
     
     // Record failed JWT validation metric
-    JwtValidationTotal.WithLabelValues("failed", "gateway").Inc()
+    metrics.JWTValidationTotal.WithLabelValues("failed", "gateway").Inc()
     
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error":       "Authentication failed",
