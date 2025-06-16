@@ -11,7 +11,8 @@ import (
     "sync"
     "time"
     "user-service/database"
-    "user-service/models"    "user-service/utils"
+    "user-service/models"
+    "user-service/utils"
 
     "github.com/gofiber/fiber/v2"
     "github.com/gofiber/fiber/v2/middleware/cors"
@@ -32,40 +33,13 @@ var jwtSecret []byte
 // Auth service database connection
 var authDB *sql.DB
 
-// Metrics middleware for HTTP requests
-func metricsMiddleware() fiber.Handler {
-    return func(c *fiber.Ctx) error {
-        start := time.Now()
-
-        // Process the request
-        err := c.Next()
-
-        duration := time.Since(start)
-        statusCode := strconv.Itoa(c.Response().StatusCode())        // Record metrics using shared metrics
-        metrics.HTTPRequestsTotal.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            statusCode,
-            "user-service",
-        ).Inc()
-
-        metrics.HTTPRequestDuration.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            "user-service",
-        ).Observe(duration.Seconds())
-
-        return err
-    }
-}
-
 // Update active users count
 func updateActiveUsersCount() {
     db := database.DB
     if db != nil {
         var count int
         query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
+            metrics.UpdateActiveUsers(float64(count), "user-service")
         }
     }
 }
@@ -74,12 +48,12 @@ func updateActiveUsersCount() {
 func updateDatabaseConnections() {    db := database.DB
     if db != nil {
         stats := db.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
+        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
     }
     
     if authDB != nil {
         stats := authDB.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
+        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "auth_db")
     }
 }
 
@@ -561,7 +535,7 @@ func main() {
     })
 
     // Add metrics middleware to track HTTP requests
-    app.Use(metricsMiddleware())
+    app.Use(metrics.HTTPMetricsMiddleware("user-service"))
 
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{

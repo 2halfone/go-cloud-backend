@@ -4,6 +4,8 @@ go 1.23.0
 
 toolchain go1.24.3
 
+replace go-cloud-backend/shared => ../shared
+
 require (
 	github.com/gofiber/fiber/v2 v2.52.8
 	github.com/gofiber/jwt/v3 v3.3.10
@@ -11,6 +13,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.22.0
 	github.com/valyala/fasthttp v1.62.0
+	go-cloud-backend/shared v0.0.0-00010101000000-000000000000
 	golang.org/x/crypto v0.38.0
 )
 

@@ -76,7 +76,47 @@ var (
 	userDB           *sql.DB
 )
 
+// Health Response Types
+type HealthResponse struct {
+	Status       string           `json:"status"`
+	Timestamp    time.Time        `json:"timestamp"`
+	Dependencies DependencyStatus `json:"dependencies"`
+	Uptime       string           `json:"uptime"`
+}
 
+type DependencyStatus struct {
+	Prometheus bool `json:"prometheus"`
+	AuthDB     bool `json:"auth_db"`
+	UserDB     bool `json:"user_db"`
+}
+
+type SecurityResponse struct {
+	Status    string                 `json:"status"`
+	Timestamp time.Time             `json:"timestamp"`
+	Data      SecurityGroupData     `json:"data"`
+	Metadata  Metadata              `json:"metadata"`
+}
+
+type VMHealthResponse struct {
+	Status    string        `json:"status"`
+	Timestamp time.Time     `json:"timestamp"`
+	Data      VMHealthData  `json:"data"`
+	Metadata  Metadata      `json:"metadata"`
+}
+
+type AnalyticsResponse struct {
+	Status    string        `json:"status"`
+	Timestamp time.Time     `json:"timestamp"`
+	Data      InsightsData  `json:"data"`
+	Metadata  Metadata      `json:"metadata"`
+}
+
+type Metadata struct {
+	Version         string `json:"version"`
+	LastUpdate      string `json:"last_update"`
+	DataSource      string `json:"data_source"`
+	ResponseTimeMs  int    `json:"response_time_ms"`
+}
 
 // Step 1.2: Data Structures per i 3 gruppi
 type SecurityGroupData struct {
@@ -1244,16 +1284,15 @@ func getSecurityDataHandler(c *fiber.Ctx) error {
 			"collection_time_ms": time.Since(start).Milliseconds(),
 		},
 	}
-
 	response := SecurityResponse{
-		AuthenticationStats: securityData.AuthenticationStats,
-		JWTValidation:      securityData.JWTValidation,
-		UserActivity:       securityData.UserActivity,
-		SecurityLevel:      securityData.SecurityLevel,
+		Status:    "success",
+		Timestamp: time.Now().UTC(),
+		Data:      securityData,
 		Metadata: Metadata{
-			CollectionTimeMs: time.Since(start).Milliseconds(),
-			DataSource:       "prometheus+database",
-			LastUpdated:      time.Now().UTC(),
+			Version:        "1.0",
+			LastUpdate:     time.Now().Format(time.RFC3339),
+			DataSource:     "prometheus+database", 
+			ResponseTimeMs: int(time.Since(start).Milliseconds()),
 		},
 	}
 
@@ -1271,17 +1310,28 @@ func getSecurityDataHandler(c *fiber.Ctx) error {
 func getVMHealthHandler(c *fiber.Ctx) error {
 	start := time.Now()
 	log.Println("💻 Collecting 100% REAL VM health metrics from Prometheus...")
-	
-	// Get ONLY real data from Prometheus - NO MOCK DATA
-	response := VMHealthResponse{
+		// Get ONLY real data from Prometheus - NO MOCK DATA
+	vmData := VMHealthData{
 		SystemResources: getSystemResourcesData(), // Real Prometheus data
 		ServiceHealth:   getServiceHealthData(),   // Real service status
 		DatabaseHealth:  getDatabaseHealthData(),  // Real DB connections
 		ResponseTimes:   getResponseTimesData(),   // Real response times
+		Metadata: map[string]interface{}{
+			"data_source":        "100% prometheus+real-data",
+			"last_updated":       time.Now().Format(time.RFC3339),
+			"collection_time_ms": time.Since(start).Milliseconds(),
+		},
+	}
+	
+	response := VMHealthResponse{
+		Status:    "success",
+		Timestamp: time.Now().UTC(),
+		Data:      vmData,
 		Metadata: Metadata{
-			CollectionTimeMs: time.Since(start).Milliseconds(),
-			DataSource:       "100% prometheus+real-data",
-			LastUpdated:      time.Now().UTC(),
+			Version:        "1.0",
+			LastUpdate:     time.Now().Format(time.RFC3339),
+			DataSource:     "100% prometheus+real-data",
+			ResponseTimeMs: int(time.Since(start).Milliseconds()),
 		},
 	}
 
@@ -1298,11 +1348,11 @@ func getVMHealthHandler(c *fiber.Ctx) error {
 // @Router /api/dashboard/insights [get]
 func getAnalyticsInsightsHandler(c *fiber.Ctx) error {
 	start := time.Now()
-	log.Println("📊 Collecting analytics insights...")
-
-	// Get analytics data
+	log.Println("📊 Collecting analytics insights...")	// Get analytics data
 	analyticsData := getAnalyticsData()
-		response := AnalyticsResponse{
+	
+	// Convert to InsightsData format
+	insightsData := InsightsData{
 		QRAnalytics: map[string]interface{}{
 			"qr_code_analytics": analyticsData.QRCodeAnalytics,
 		},
@@ -1313,13 +1363,25 @@ func getAnalyticsInsightsHandler(c *fiber.Ctx) error {
 			"attendance_stats": analyticsData.AttendanceStats,
 		},
 		UsagePatterns: map[string]interface{}{
-			"api_usage_stats":    analyticsData.APIUsageStats,
-			"database_metrics":   analyticsData.DatabaseMetrics,
+			"api_usage_stats":  analyticsData.APIUsageStats,
+			"database_metrics": analyticsData.DatabaseMetrics,
 		},
+		Metadata: map[string]interface{}{
+			"data_source":        "prometheus+database",
+			"last_updated":       time.Now().Format(time.RFC3339),
+			"collection_time_ms": time.Since(start).Milliseconds(),
+		},
+	}
+	
+	response := AnalyticsResponse{
+		Status:    "success",
+		Timestamp: time.Now().UTC(),
+		Data:      insightsData,
 		Metadata: Metadata{
-			CollectionTimeMs: time.Since(start).Milliseconds(),
-			DataSource:       "prometheus+database",
-			LastUpdated:      time.Now().UTC(),
+			Version:        "1.0",
+			LastUpdate:     time.Now().Format(time.RFC3339),
+			DataSource:     "prometheus+database",
+			ResponseTimeMs: int(time.Since(start).Milliseconds()),
 		},
 	}
 

@@ -21,38 +21,15 @@ import (
     "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
+    
+    "go-cloud-backend/shared/metrics"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// Shared-compatible metrics definitions
+// Gateway-specific metrics (non-duplicate)
 var (
-    HTTPRequestsTotal = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "http_requests_total",
-            Help: "Total number of HTTP requests",
-        },
-        []string{"method", "endpoint", "status_code", "service"},
-    )
-
-    HTTPRequestDuration = prometheus.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "http_request_duration_seconds", 
-            Help:    "Duration of HTTP requests in seconds",
-            Buckets: prometheus.DefBuckets,
-        },
-        []string{"method", "endpoint", "service"},
-    )
-
-    ProxyRequestsTotal = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "gateway_proxy_requests_total",
-            Help: "Total number of proxy requests through gateway",
-        },
-        []string{"target_service", "status_code"},
-    )
-
     JwtValidationTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "jwt_validation_total",
@@ -63,46 +40,8 @@ var (
 )
 
 func init() {
-    // Register metrics
-    prometheus.MustRegister(HTTPRequestsTotal)
-    prometheus.MustRegister(HTTPRequestDuration)
-    prometheus.MustRegister(ProxyRequestsTotal)
+    // Register only gateway-specific metrics
     prometheus.MustRegister(JwtValidationTotal)
-}
-
-// Metrics middleware for HTTP requests
-func metricsMiddleware() fiber.Handler {
-    return func(c *fiber.Ctx) error {
-        start := time.Now()
-
-        // Process the request
-        err := c.Next()
-
-        duration := time.Since(start)
-        statusCode := strconv.Itoa(c.Response().StatusCode())
-
-        // Record metrics
-        HTTPRequestsTotal.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            statusCode,
-            "gateway",
-        ).Inc()
-
-        HTTPRequestDuration.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            "gateway",
-        ).Observe(duration.Seconds())
-
-        // Record proxy metrics based on path
-        targetService := getTargetService(c.Path())
-        if targetService != "gateway" {
-            ProxyRequestsTotal.WithLabelValues(targetService, statusCode).Inc()
-        }
-
-        return err
-    }
 }
 
 // Helper function to determine target service from path
@@ -344,10 +283,27 @@ func main() {
             })
         },
     }))
+      // Logger completo per richieste/risposte
+    app.Use(RequestResponseLogger())    
     
-    // Logger completo per richieste/risposte
-    app.Use(RequestResponseLogger())    // -------------------------------------------------------
-    // 2) Rotte pubbliche (senza JWT)
+    // Metrics middleware per HTTP requests e proxy
+    app.Use(metrics.HTTPMetricsMiddleware("gateway"))
+    
+    // Middleware per proxy metrics
+    app.Use(func(c *fiber.Ctx) error {
+        err := c.Next()
+        
+        // Record proxy metrics based on path
+        targetService := getTargetService(c.Path())
+        if targetService != "gateway" {
+            statusCode := strconv.Itoa(c.Response().StatusCode())
+            metrics.RecordProxyRequest(targetService, statusCode)
+        }
+        
+        return err
+    })
+    
+    // -------------------------------------------------------    // Rotte pubbliche (senza JWT)
     // -------------------------------------------------------    // Rotte di autenticazione - non richiedono JWT
     app.All("/auth/*", func(c *fiber.Ctx) error {
         // Strip /auth prefix and forward to auth-service
