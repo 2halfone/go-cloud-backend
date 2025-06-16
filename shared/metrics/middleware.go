@@ -36,7 +36,6 @@ var (
 		},
 		[]string{"status", "service"},
 	)
-
 	// QR Code Metrics
 	QRScansTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -44,6 +43,14 @@ var (
 			Help: "Total number of QR code scans",
 		},
 		[]string{"event_id", "status", "service"},
+	)
+
+	QREventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "qr_events_total",
+			Help: "Total number of QR events created",
+		},
+		[]string{"service"},
 	)
 
 	// User Activity Metrics

@@ -8,7 +8,6 @@ import (
     "os"
     "strconv"
     "strings"
-    "sync"
     "time"
     "user-service/database"
     "user-service/models"
@@ -19,7 +18,6 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
-    "github.com/prometheus/client_golang/prometheus"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
@@ -38,14 +36,16 @@ func updateActiveUsersCount() {
     db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
+        query := `SELECT COUNT(*) FROM users`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
             metrics.UpdateActiveUsers(float64(count), "user-service")
         }
     }
 }
 
 // Update database connections count
-func updateDatabaseConnections() {    db := database.DB
+func updateDatabaseConnections() {
+    db := database.DB
     if db != nil {
         stats := db.Stats()
         metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
@@ -62,7 +62,8 @@ func updateAttendanceEventsCount() {
     db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`        if err := db.QueryRow(query).Scan(&count); err == nil {
+        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
             metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
         }
     }
