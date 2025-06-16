@@ -2,114 +2,167 @@ package metrics
 
 import (
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
+	once sync.Once
+	
 	// HTTP Metrics
-	HTTPRequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_requests_total",
-			Help: "Total number of HTTP requests",
-		},
-		[]string{"method", "endpoint", "status_code", "service"},
-	)
-
-	HTTPRequestDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "http_request_duration_seconds", 
-			Help:    "Duration of HTTP requests in seconds",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "endpoint", "service"},
-	)
-
+	HTTPRequestsTotal *prometheus.CounterVec
+	HTTPRequestDuration *prometheus.HistogramVec
+	
 	// Authentication Metrics
-	AuthAttemptsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "auth_attempts_total",
-			Help: "Total number of authentication attempts",
-		},
-		[]string{"status", "service"},
-	)
-
-	JWTValidationTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "jwt_validation_total",
-			Help: "Total number of JWT token validations",
-		},
-		[]string{"status", "service"},
-	)
-
+	AuthAttemptsTotal *prometheus.CounterVec
+	JWTValidationTotal *prometheus.CounterVec
+	
 	// QR Code Metrics
-	QRScansTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "qr_scans_total",
-			Help: "Total number of QR code scans",
-		},
-		[]string{"event_id", "status", "service"},
-	)
-
-	QREventsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "qr_events_total",
-			Help: "Total number of QR events created",
-		},
-		[]string{"service"},
-	)
-
+	QRScansTotal *prometheus.CounterVec
+	QREventsTotal *prometheus.CounterVec
+	
 	// User Activity Metrics
-	ActiveUsers = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "active_users_total",
-			Help: "Number of active users",
-		},
-		[]string{"service"},
-	)
-
+	ActiveUsers *prometheus.GaugeVec
+	
 	// Database Metrics
-	DatabaseConnections = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "database_connections_active",
-			Help: "Number of active database connections",
-		},
-		[]string{"service", "database"},
-	)
-
+	DatabaseConnections *prometheus.GaugeVec
+	
 	// System Error Metrics
-	SystemErrorsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "system_errors_total",
-			Help: "Total number of system errors",
-		},
-		[]string{"service", "error_type"},
-	)
-
+	SystemErrorsTotal *prometheus.CounterVec
+	
 	// Attendance Events Metrics
-	AttendanceEventsActive = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "attendance_events_active",
-			Help: "Number of active attendance events",
-		},
-		[]string{"service"},
-	)
+	AttendanceEventsActive *prometheus.GaugeVec
+)
 
-	// Gateway-specific metrics
-	ProxyRequestsTotal = promauto.NewCounterVec(
+// InitMetrics initializes all metrics safely (only once)
+func InitMetrics() {
+	once.Do(func() {
+		// HTTP Metrics
+		HTTPRequestsTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_requests_total",
+				Help: "Total number of HTTP requests",
+			},
+			[]string{"method", "endpoint", "status_code", "service"},
+		)
+		
+		HTTPRequestDuration = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "http_request_duration_seconds", 
+				Help:    "Duration of HTTP requests in seconds",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"method", "endpoint", "service"},
+		)
+		
+		// Authentication Metrics
+		AuthAttemptsTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "auth_attempts_total",
+				Help: "Total number of authentication attempts",
+			},
+			[]string{"status", "service"},
+		)
+		
+		JWTValidationTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "jwt_validation_total",
+				Help: "Total number of JWT token validations",
+			},
+			[]string{"status", "service"},
+		)
+		
+		// QR Code Metrics
+		QRScansTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "qr_scans_total",
+				Help: "Total number of QR code scans",
+			},
+			[]string{"event_id", "status", "service"},
+		)
+		
+		QREventsTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "qr_events_total",
+				Help: "Total number of QR events created",
+			},
+			[]string{"service"},
+		)
+		
+		// User Activity Metrics
+		ActiveUsers = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "active_users_total",
+				Help: "Number of active users",
+			},
+			[]string{"service"},
+		)
+		
+		// Database Metrics
+		DatabaseConnections = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "database_connections_active",
+				Help: "Number of active database connections",
+			},
+			[]string{"service", "database"},
+		)
+		
+		// System Error Metrics
+		SystemErrorsTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "system_errors_total",
+				Help: "Total number of system errors",
+			},
+			[]string{"service", "error_type"},
+		)
+		
+		// Attendance Events Metrics
+		AttendanceEventsActive = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "attendance_events_active",
+				Help: "Number of active attendance events",
+			},
+			[]string{"service"},
+		)
+		
+		// Register all metrics safely
+		prometheus.MustRegister(
+			HTTPRequestsTotal,
+			HTTPRequestDuration,
+			AuthAttemptsTotal,
+			JWTValidationTotal,
+			QRScansTotal,
+			QREventsTotal,
+			ActiveUsers,
+			DatabaseConnections,
+			SystemErrorsTotal,
+			AttendanceEventsActive,
+		)	})
+}
+
+// Gateway-specific metrics  
+var ProxyRequestsTotal *prometheus.CounterVec
+
+func init() {
+	ProxyRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gateway_proxy_requests_total",
 			Help: "Total number of proxy requests through gateway",
 		},
 		[]string{"target_service", "status_code"},
 	)
-)
+	// Register proxy metrics separately
+	prometheus.MustRegister(ProxyRequestsTotal)
+}
 
 // HTTPMetricsMiddleware collects HTTP request metrics
 func HTTPMetricsMiddleware(serviceName string) fiber.Handler {
+	// Initialize metrics when middleware is first used
+	InitMetrics()
+	
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 
