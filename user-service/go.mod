@@ -37,4 +37,4 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect; indirect	golang.org/x/sys v0.33.0 // indirect
 )
 
-replace go-cloud-backend/shared => ../shared
+replace go-cloud-backend/shared => ./shared
