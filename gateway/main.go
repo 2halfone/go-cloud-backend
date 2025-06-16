@@ -8,7 +8,6 @@ import (
     "os"
     "strconv"
     "strings"
-    "sync"
     "time"
 
     "github.com/gofiber/fiber/v2"
@@ -27,64 +26,48 @@ import (
 // JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
-// Metrics registration once
+// Shared-compatible metrics definitions
 var (
-    metricsOnce sync.Once
-    httpRequestsTotal *prometheus.CounterVec
-    httpRequestDuration *prometheus.HistogramVec
-    proxyRequestsTotal *prometheus.CounterVec
-    activeConnectionsGauge prometheus.Gauge
-    jwtValidationTotal *prometheus.CounterVec
+    HTTPRequestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "http_requests_total",
+            Help: "Total number of HTTP requests",
+        },
+        []string{"method", "endpoint", "status_code", "service"},
+    )
+
+    HTTPRequestDuration = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "http_request_duration_seconds", 
+            Help:    "Duration of HTTP requests in seconds",
+            Buckets: prometheus.DefBuckets,
+        },
+        []string{"method", "endpoint", "service"},
+    )
+
+    ProxyRequestsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_proxy_requests_total",
+            Help: "Total number of proxy requests through gateway",
+        },
+        []string{"target_service", "status_code"},
+    )
+
+    JwtValidationTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "jwt_validation_total",
+            Help: "Total number of JWT validations",
+        },
+        []string{"status", "service"},
+    )
 )
 
-// Initialize metrics once
-func initMetrics() {
-    metricsOnce.Do(func() {
-        httpRequestsTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "http_requests_total",
-                Help: "Total number of HTTP requests",
-            },
-            []string{"method", "endpoint", "status_code", "service"},
-        )
-
-        httpRequestDuration = prometheus.NewHistogramVec(
-            prometheus.HistogramOpts{
-                Name:    "http_request_duration_seconds",
-                Help:    "Duration of HTTP requests in seconds",
-                Buckets: prometheus.DefBuckets,
-            },
-            []string{"method", "endpoint", "service"},
-        )
-
-        proxyRequestsTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "gateway_proxy_requests_total",
-                Help: "Total number of proxy requests through gateway",
-            },
-            []string{"target_service", "status_code"},
-        )
-
-        activeConnectionsGauge = prometheus.NewGauge(
-            prometheus.GaugeOpts{
-                Name: "gateway_active_connections",
-                Help: "Number of active connections to gateway",
-            },
-        )
-
-        jwtValidationTotal = prometheus.NewCounterVec(
-            prometheus.CounterOpts{
-                Name: "jwt_validation_total",
-                Help: "Total number of JWT validations",
-            },
-            []string{"status", "service"},
-        )        // Register metrics only once
-        prometheus.MustRegister(httpRequestsTotal)
-        prometheus.MustRegister(httpRequestDuration)
-        prometheus.MustRegister(proxyRequestsTotal)
-        prometheus.MustRegister(activeConnectionsGauge)
-        prometheus.MustRegister(jwtValidationTotal)
-    })
+func init() {
+    // Register metrics
+    prometheus.MustRegister(HTTPRequestsTotal)
+    prometheus.MustRegister(HTTPRequestDuration)
+    prometheus.MustRegister(ProxyRequestsTotal)
+    prometheus.MustRegister(JwtValidationTotal)
 }
 
 // Metrics middleware for HTTP requests
@@ -99,14 +82,14 @@ func metricsMiddleware() fiber.Handler {
         statusCode := strconv.Itoa(c.Response().StatusCode())
 
         // Record metrics
-        httpRequestsTotal.WithLabelValues(
+        HTTPRequestsTotal.WithLabelValues(
             c.Method(),
             c.Path(),
             statusCode,
             "gateway",
         ).Inc()
 
-        httpRequestDuration.WithLabelValues(
+        HTTPRequestDuration.WithLabelValues(
             c.Method(),
             c.Path(),
             "gateway",
@@ -115,7 +98,7 @@ func metricsMiddleware() fiber.Handler {
         // Record proxy metrics based on path
         targetService := getTargetService(c.Path())
         if targetService != "gateway" {
-            proxyRequestsTotal.WithLabelValues(targetService, statusCode).Inc()
+            ProxyRequestsTotal.WithLabelValues(targetService, statusCode).Inc()
         }
 
         return err
@@ -260,7 +243,7 @@ func SecurityHeaders() fiber.Handler {
 
 func main() {
     // Initialize metrics first
-    initMetrics()
+    // Metrics initialized in init() function
     
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
@@ -684,7 +667,7 @@ func jwtError(c *fiber.Ctx, err error) error {
         err.Error(), c.Path(), c.Method(), c.IP(), c.Get("User-Agent"))
     
     // Record failed JWT validation metric
-    jwtValidationTotal.WithLabelValues("failed", "gateway").Inc()
+    JwtValidationTotal.WithLabelValues("failed", "gateway").Inc()
     
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error":       "Authentication failed",
