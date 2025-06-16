@@ -812,12 +812,10 @@ func getNetworkUsage() float64 {
 // Security metrics helpers with real database integration
 func getSuccessfulLogins24h() int {
 	if authDB != nil {
-		var count int
-		query := `
+		var count int		query := `
 			SELECT COUNT(*) 
 			FROM auth_logs 
-			WHERE action = 'login' 
-			AND success = true 
+			WHERE success = true 
 			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {
@@ -838,12 +836,10 @@ func getSuccessfulLogins24h() int {
 
 func getFailedAttempts24h() int {
 	if authDB != nil {
-		var count int
-		query := `
+		var count int		query := `
 			SELECT COUNT(*) 
 			FROM auth_logs 
-			WHERE action = 'login' 
-			AND success = false 
+			WHERE success = false 
 			AND timestamp >= NOW() - INTERVAL '24 hours'
 		`
 		if err := authDB.QueryRow(query).Scan(&count); err == nil {

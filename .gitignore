@@ -8,6 +8,9 @@
 /*.so
 /*.dylib
 
+# Ignore all .exe files in any directory
+**/*.exe
+
 # Mac, Windows, Linux temp files
 .DS_Store
 Thumbs.db
