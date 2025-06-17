@@ -538,8 +538,8 @@ func main() {
     app := fiber.New(fiber.Config{
         AppName: "User Service v1.0",    })
 
-    // Add metrics middleware to track HTTP requests
-    app.Use(metrics.HTTPMetricsMiddleware("user-service"))
+    // Add metrics middleware to track HTTP requests - TEMPORARILY DISABLED FOR DEBUG
+    // app.Use(metrics.HTTPMetricsMiddleware("user-service"))
 
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{
