@@ -2,12 +2,22 @@ package metrics
 
 import (
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var initOnce sync.Once
+
+func init() {
+	initOnce.Do(func() {
+		// Clear any existing metrics to prevent "collected before" errors
+		prometheus.DefaultRegisterer = prometheus.NewRegistry()
+	})
+}
 
 var (
 	// HTTP Metrics
