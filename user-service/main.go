@@ -16,13 +16,13 @@ import (
     "github.com/gofiber/fiber/v2"
     "github.com/gofiber/fiber/v2/middleware/cors"
     jwtware "github.com/gofiber/jwt/v3"
-    "github.com/golang-jwt/jwt/v4"
-    "github.com/skip2/go-qrcode"
+    "github.com/golang-jwt/jwt/v4"    "github.com/skip2/go-qrcode"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
     
-    "go-cloud-backend/shared/metrics"
+    // TODO: Re-enable once Prometheus issues are resolved
+    // "go-cloud-backend/shared/metrics"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -61,11 +61,11 @@ func updateDatabaseConnections() {
 func updateAttendanceEventsCount() {
     db := database.DB
     if db != nil {
-        var count int
-        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
+        var count int        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.InitMetrics()
-            metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
+            // TODO: Re-enable metrics once Prometheus issues are resolved
+            // metrics.InitMetrics()
+            // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
         }
     }
 }
@@ -515,8 +515,8 @@ func connectAuthServiceDB() {
 }
 
 func main() {
-    // Initialize metrics system
-    metrics.InitMetrics()
+    // TODO: Re-enable metrics once Prometheus issues are resolved
+    // metrics.InitMetrics()
     
     // Initialize database connection
     database.Connect()
@@ -565,12 +565,14 @@ func main() {
       // Endpoint pubblici
     app.Get("/health", healthHandler)
 
-    // Prometheus metrics endpoint
+    // Prometheus metrics endpoint    // TODO: Re-enable metrics endpoint once Prometheus issues are resolved
+    /*
     app.Get("/metrics", func(c *fiber.Ctx) error {
         handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
         handler(c.Context())
         return nil
     })
+    */
 
     // JWT middleware per endpoint protetti
     app.Use("/user", jwtware.New(jwtware.Config{
