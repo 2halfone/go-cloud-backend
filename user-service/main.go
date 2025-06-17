@@ -37,7 +37,7 @@ func updateActiveUsersCount() {
     if db != nil {
         var count int
         query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
-            // metrics.UpdateActiveUsers(float64(count), "user-service")
+            // // // metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
         }
     }
 }
@@ -46,24 +46,20 @@ func updateActiveUsersCount() {
 func updateDatabaseConnections() {
     db := database.DB
     if db != nil {
-        stats := db.Stats()        // metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
+        // // // metrics.DatabaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
     }
     
     if authDB != nil {
-        stats := authDB.Stats()
-        // metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "auth_db")
+        // // // metrics.DatabaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
     }
 }
 
 // Update attendance events count
 func updateAttendanceEventsCount() {
-    db := database.DB
-    if db != nil {
-        var count int        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
+    db := database.DB    if db != nil {        var count int
+        query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            // TODO: Re-enable metrics once Prometheus issues are resolved
-            // metrics.InitMetrics()
-            // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
+            // // // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
         }
     }
 }
