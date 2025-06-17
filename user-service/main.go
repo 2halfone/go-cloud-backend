@@ -36,9 +36,8 @@ func updateActiveUsersCount() {
     db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM users`
-        if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.UpdateActiveUsers(float64(count), "user-service")
+        query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
+            // metrics.UpdateActiveUsers(float64(count), "user-service")
         }
     }
 }
@@ -47,13 +46,12 @@ func updateActiveUsersCount() {
 func updateDatabaseConnections() {
     db := database.DB
     if db != nil {
-        stats := db.Stats()
-        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
+        stats := db.Stats()        // metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
     }
     
     if authDB != nil {
         stats := authDB.Stats()
-        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "auth_db")
+        // metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "auth_db")
     }
 }
 
