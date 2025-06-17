@@ -16,13 +16,22 @@ var (
 
 // SafeRegisterMetric safely registers a metric, ignoring "already registered" errors
 func safeRegisterMetric(metric prometheus.Collector) prometheus.Collector {
+	if metric == nil {
+		panic("Cannot register nil metric")
+	}
+	
 	err := prometheus.Register(metric)
 	if err != nil {
 		// If the metric is already registered, that's fine - use the existing one
 		if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
-			return are.ExistingCollector
+			existing := are.ExistingCollector
+			if existing == nil {
+				// If existing is nil, return the original metric
+				return metric
+			}
+			return existing
 		}
-		// For other errors, return the metric anyway
+		// For other errors, return the metric anyway but log the error
 		return metric
 	}
 	return metric
@@ -74,22 +83,32 @@ var (
 )
 
 func initHTTPMetrics() {
-	HTTPRequestsTotal = safeRegisterMetric(prometheus.NewCounterVec(
+	counter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
 		[]string{"method", "endpoint", "status_code", "service"},
-	)).(*prometheus.CounterVec)
+	)
+	HTTPRequestsTotal = safeRegisterMetric(counter).(*prometheus.CounterVec)
+	
+	if HTTPRequestsTotal == nil {
+		panic("Failed to initialize HTTPRequestsTotal metric")
+	}
 
-	HTTPRequestDuration = safeRegisterMetric(prometheus.NewHistogramVec(
+	histogram := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "http_request_duration_seconds", 
 			Help:    "Duration of HTTP requests in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"method", "endpoint", "service"},
-	)).(*prometheus.HistogramVec)
+	)
+	HTTPRequestDuration = safeRegisterMetric(histogram).(*prometheus.HistogramVec)
+	
+	if HTTPRequestDuration == nil {
+		panic("Failed to initialize HTTPRequestDuration metric")
+	}
 }
 
 func initAuthMetrics() {
