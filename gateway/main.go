@@ -386,7 +386,7 @@ func main() {
                 "user":   "/user/profile (protected), /user/scan-qr (public)",
                 "qr_user": "/user/qr/scan, /user/qr/attendance/history, /user/qr/attendance/today (JWT protected)",
                 "qr_admin": "/user/qr/admin/generate, /user/qr/admin/events, /user/qr/admin/events/:id/attendance (admin only)",
-                "admin":  "/admin/users, /admin/users/:id/role, /admin/users/:id (admin only)",
+                "admin":  "/admin/users, /admin/auth-logs, /admin/users/:id/role, /admin/users/:id (admin only)",
                 "health": "/health",
             },
             "rate_limits": fiber.Map{
@@ -516,6 +516,47 @@ app.Get("/user/qr/admin/events/:event_id/users", adminOnly, func(c *fiber.Ctx) e
 // -------------------------------------------------------
 // 5) Rotte amministrative (solo admin)
 // -------------------------------------------------------
+
+// Auth Admin routes - forward to auth-service
+app.Get("/admin/users", adminOnly, func(c *fiber.Ctx) error {
+    target := "http://auth-service:3001/admin/users"
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("ADMIN_USERS_PROXY: %s %s -> %s [IP: %s, Admin: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Get("/admin/auth-logs", adminOnly, func(c *fiber.Ctx) error {
+    target := "http://auth-service:3001/admin/auth-logs"
+    if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
+        target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+    }
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("ADMIN_AUTH_LOGS_PROXY: %s %s -> %s [IP: %s, Admin: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Put("/admin/users/:id/role", adminOnly, func(c *fiber.Ctx) error {
+    userID := c.Params("id")
+    target := fmt.Sprintf("http://auth-service:3001/admin/users/%s/role", userID)
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("ADMIN_UPDATE_ROLE_PROXY: %s %s -> %s [IP: %s, Admin: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+app.Delete("/admin/users/:id", adminOnly, func(c *fiber.Ctx) error {
+    userID := c.Params("id")
+    target := fmt.Sprintf("http://auth-service:3001/admin/users/%s", userID)
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("ADMIN_DELETE_USER_PROXY: %s %s -> %s [IP: %s, Admin: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
 
 // QR Admin routes - forward to user-service with DNS fallback
 app.All("/admin/qr/*", adminOnly, func(c *fiber.Ctx) error {
