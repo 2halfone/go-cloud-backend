@@ -509,8 +509,8 @@ func connectAuthServiceDB() {
 }
 
 func main() {
-    // TODO: Re-enable metrics once Prometheus issues are resolved
-    // metrics.InitMetrics()
+    // Initialize metrics
+    metrics.InitMetrics()
     
     // Initialize database connection
     database.Connect()

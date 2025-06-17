@@ -200,9 +200,6 @@ func initGatewayMetrics() {
 
 // HTTPMetricsMiddleware collects HTTP request metrics
 func HTTPMetricsMiddleware(serviceName string) fiber.Handler {
-	// Ensure metrics are initialized
-	InitMetrics()
-	
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 
@@ -232,7 +229,6 @@ func HTTPMetricsMiddleware(serviceName string) fiber.Handler {
 
 // RecordAuthAttempt records authentication attempt metrics
 func RecordAuthAttempt(success bool, serviceName string) {
-	InitMetrics()
 	status := "failed"
 	if success {
 		status = "success"
@@ -242,7 +238,6 @@ func RecordAuthAttempt(success bool, serviceName string) {
 
 // RecordQRScan records QR code scan metrics
 func RecordQRScan(eventID string, success bool, serviceName string) {
-	InitMetrics()
 	status := "failed"
 	if success {
 		status = "success"
@@ -252,31 +247,26 @@ func RecordQRScan(eventID string, success bool, serviceName string) {
 
 // UpdateActiveUsers updates the active users gauge
 func UpdateActiveUsers(count float64, serviceName string) {
-	InitMetrics()
 	ActiveUsers.WithLabelValues(serviceName).Set(count)
 }
 
 // UpdateDatabaseConnections updates database connections gauge
 func UpdateDatabaseConnections(count float64, serviceName, database string) {
-	InitMetrics()
 	DatabaseConnections.WithLabelValues(serviceName, database).Set(count)
 }
 
 // RecordSystemError records system error metrics
 func RecordSystemError(errorType, serviceName string) {
-	InitMetrics()
 	SystemErrorsTotal.WithLabelValues(serviceName, errorType).Inc()
 }
 
 // RecordProxyRequest records gateway proxy request metrics
 func RecordProxyRequest(targetService, statusCode string) {
-	InitMetrics()
 	ProxyRequestsTotal.WithLabelValues(targetService, statusCode).Inc()
 }
 
 // RecordJWTValidation records JWT validation metrics
 func RecordJWTValidation(success bool, serviceName string) {
-	InitMetrics()
 	status := "failed"
 	if success {
 		status = "success"
