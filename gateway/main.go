@@ -266,11 +266,10 @@ func main() {
             })
         },
     }))
-      // Logger completo per richieste/risposte
-    app.Use(RequestResponseLogger())    
+      // Logger completo per richieste/risposte    app.Use(RequestResponseLogger())    
     
-    // Metrics middleware per HTTP requests e proxy
-    app.Use(metrics.HTTPMetricsMiddleware("gateway"))
+    // Metrics middleware per HTTP requests e proxy - TEMPORANEAMENTE DISABILITATO per duplicati
+    // app.Use(metrics.HTTPMetricsMiddleware("gateway"))
     
     // Middleware per proxy metrics
     app.Use(func(c *fiber.Ctx) error {
