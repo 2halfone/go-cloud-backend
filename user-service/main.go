@@ -16,12 +16,13 @@ import (
     "github.com/gofiber/fiber/v2"
     "github.com/gofiber/fiber/v2/middleware/cors"
     jwtware "github.com/gofiber/jwt/v3"
-    "github.com/golang-jwt/jwt/v4"
-    "github.com/skip2/go-qrcode"
+    "github.com/golang-jwt/jwt/v4"    "github.com/skip2/go-qrcode"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
     
+    // TODO: Re-enable once Prometheus issues are resolved
+    // "go-cloud-backend/shared/metrics"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -30,14 +31,12 @@ var jwtSecret []byte
 // Auth service database connection
 var authDB *sql.DB
 
-// Metrics middleware for HTTP requests
-
 // Update active users count
-func updateActiveUsersCount() {    db := database.DB
+func updateActiveUsersCount() {
+    db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM users`
-        if err := db.QueryRow(query).Scan(&count); err == nil {
+        query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
             // // // metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
         }
     }
@@ -57,8 +56,7 @@ func updateDatabaseConnections() {
 
 // Update attendance events count
 func updateAttendanceEventsCount() {
-    db := database.DB
-    if db != nil {        var count int
+    db := database.DB    if db != nil {        var count int
         query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
             // // // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
@@ -511,6 +509,9 @@ func connectAuthServiceDB() {
 }
 
 func main() {
+    // TODO: Re-enable metrics once Prometheus issues are resolved
+    // metrics.InitMetrics()
+    
     // Initialize database connection
     database.Connect()
     
@@ -526,14 +527,12 @@ func main() {
     if jwtSecretEnv == "" {
         log.Fatal("JWT_SECRET environment variable not set")
     }
-    jwtSecret = []byte(jwtSecretEnv)
-
-    app := fiber.New(fiber.Config{
-        AppName: "User Service v1.0",
+    jwtSecret = []byte(jwtSecretEnv)    app := fiber.New(fiber.Config{
+        AppName: "User Service v1.0 - METRICS DISABLED", 
     })
 
-    // Add metrics middleware to track HTTP requests
-    // app.Use(metricsMiddleware())
+    // Add metrics middleware to track HTTP requests - TEMPORARILY DISABLED FOR DEBUG
+    // app.Use(metrics.HTTPMetricsMiddleware("user-service"))
 
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{
@@ -545,8 +544,6 @@ func main() {
     }))
 
     // Start periodic metrics updates
-    // TODO: Re-enable metrics collection once Prometheus issues are resolved
-    /*
     go func() {
         for {
             time.Sleep(30 * time.Second)
@@ -555,19 +552,20 @@ func main() {
             updateAttendanceEventsCount()
         }
     }()
-    */
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
     // app.Use(gatewayOnly)
       // Endpoint pubblici
     app.Get("/health", healthHandler)
 
-    // Prometheus metrics endpoint
+    // Prometheus metrics endpoint    // TODO: Re-enable metrics endpoint once Prometheus issues are resolved
+    /*
     app.Get("/metrics", func(c *fiber.Ctx) error {
         handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
         handler(c.Context())
         return nil
     })
+    */
 
     // JWT middleware per endpoint protetti
     app.Use("/user", jwtware.New(jwtware.Config{

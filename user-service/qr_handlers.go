@@ -6,8 +6,7 @@ import (
     "fmt"
     "log"
     "strings"
-    "time"
-    "user-service/database"
+    "time"    "user-service/database"
 
     "github.com/gofiber/fiber/v2"
 )
@@ -121,8 +120,7 @@ func generateQRHandler(c *fiber.Ctx) error {
     } else {
         log.Printf("generateQRHandler: ✅ Created EMPTY table for selective QR-only participation")
     }
-    
-    // Record QR event creation metric
+      // Record QR event creation metric
     // metrics.QREventsTotal.WithLabelValues("user-service").Inc()
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -211,15 +209,13 @@ func scanQRHandler(c *fiber.Ctx) error {
     tableName := "attendance_" + strings.ReplaceAll(qrClaims.EventID, "-", "_")
     err = insertAttendanceRecordOnScan(tableName, userID, name, surname)
     if err != nil {
-        log.Printf("Error saving attendance: %v", err)
-        // Record failed QR scan metric
+        log.Printf("Error saving attendance: %v", err)        // Record failed QR scan metric
         // metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "failed", "user-service").Inc()
-        // // metrics.SystemErrorsTotal.WithLabelValues("user-service", "database_error").Inc()
+        // metrics.SystemErrorsTotal.WithLabelValues("user-service", "database_error").Inc()
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
-    }
-      // Record successful QR scan metric
+    }    // Record successful QR scan metric
     // metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "success", "user-service").Inc()
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
