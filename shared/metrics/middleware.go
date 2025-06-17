@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	initOnce sync.Once	metricsInitialized bool
+	initOnce sync.Once
+	metricsInitialized bool
 )
 
 // SafeRegisterMetric safely registers a metric, ignoring "already registered" errors
