@@ -31,40 +31,14 @@ var jwtSecret []byte
 // Auth service database connection
 var authDB *sql.DB
 
-// Metrics middleware for HTTP requests
-func metricsMiddleware() fiber.Handler {
-    return func(c *fiber.Ctx) error {
-        start := time.Now()
-
-        // Process the request
-        err := c.Next()
-
-        duration := time.Since(start)
-        statusCode := strconv.Itoa(c.Response().StatusCode())        // Record metrics using shared metrics
-        metrics.HTTPRequestsTotal.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            statusCode,
-            "user-service",
-        ).Inc()
-
-        metrics.HTTPRequestDuration.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            "user-service",
-        ).Observe(duration.Seconds())
-
-        return err
-    }
-}
-
 // Update active users count
-func updateActiveUsersCount() {    db := database.DB
+func updateActiveUsersCount() {
+    db := database.DB
     if db != nil {
         var count int
         query := `SELECT COUNT(*) FROM users`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
+            metrics.UpdateActiveUsers(float64(count), "user-service")
         }
     }
 }
@@ -74,21 +48,23 @@ func updateDatabaseConnections() {
     db := database.DB
     if db != nil {
         stats := db.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
+        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "user_db")
     }
     
     if authDB != nil {
         stats := authDB.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
+        metrics.UpdateDatabaseConnections(float64(stats.OpenConnections), "user-service", "auth_db")
     }
 }
 
 // Update attendance events count
 func updateAttendanceEventsCount() {
     db := database.DB
-    if db != nil {        var count int
+    if db != nil {
+        var count int
         query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
+            metrics.InitMetrics()
             metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
         }
     }
@@ -539,6 +515,9 @@ func connectAuthServiceDB() {
 }
 
 func main() {
+    // Initialize metrics system
+    metrics.InitMetrics()
+    
     // Initialize database connection
     database.Connect()
     
@@ -557,11 +536,10 @@ func main() {
     jwtSecret = []byte(jwtSecretEnv)
 
     app := fiber.New(fiber.Config{
-        AppName: "User Service v1.0",
-    })
+        AppName: "User Service v1.0",    })
 
     // Add metrics middleware to track HTTP requests
-    app.Use(metricsMiddleware())
+    app.Use(metrics.HTTPMetricsMiddleware("user-service"))
 
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{

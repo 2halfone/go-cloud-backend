@@ -164,8 +164,8 @@ func SecurityHeaders() fiber.Handler {
 }
 
 func main() {
-    // Initialize metrics first
-    // Metrics initialized in init() function
+    // Initialize metrics system
+    metrics.InitMetrics()
     
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
@@ -405,12 +405,10 @@ func main() {
     app.Use(jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
-    }))
-
-    // Middleware per tracciare validazioni JWT riuscite
+    }))    // Middleware per tracciare validazioni JWT riuscite
     app.Use(func(c *fiber.Ctx) error {
         // Se arriviamo qui, la validazione JWT è andata a buon fine
-        metrics.JWTValidationTotal.WithLabelValues("success", "gateway").Inc()
+        metrics.RecordJWTValidation(true, "gateway")
         return c.Next()
     })
 
@@ -608,11 +606,10 @@ app.All("/admin/*", adminOnly, func(c *fiber.Ctx) error {
 
 // jwtError gestisce gli errori di autenticazione JWT
 func jwtError(c *fiber.Ctx, err error) error {
-    log.Printf("JWT_AUTH_FAILED: %s - Path: %s - Method: %s - IP: %s - UserAgent: %s", 
-        err.Error(), c.Path(), c.Method(), c.IP(), c.Get("User-Agent"))
+    log.Printf("JWT_AUTH_FAILED: %s - Path: %s - Method: %s - IP: %s - UserAgent: %s",        err.Error(), c.Path(), c.Method(), c.IP(), c.Get("User-Agent"))
     
     // Record failed JWT validation metric
-    metrics.JWTValidationTotal.WithLabelValues("failed", "gateway").Inc()
+    metrics.RecordJWTValidation(false, "gateway")
     
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error":       "Authentication failed",

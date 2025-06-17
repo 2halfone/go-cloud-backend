@@ -544,6 +544,9 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
 }
 
 func main() {
+    // Initialize metrics system
+    metrics.InitMetrics()
+    
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
     if jwtSecretEnv == "" {
