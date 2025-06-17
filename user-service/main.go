@@ -531,10 +531,9 @@ func main() {
     if jwtSecretEnv == "" {
         log.Fatal("JWT_SECRET environment variable not set")
     }
-    jwtSecret = []byte(jwtSecretEnv)
-
-    app := fiber.New(fiber.Config{
-        AppName: "User Service v1.0",    })
+    jwtSecret = []byte(jwtSecretEnv)    app := fiber.New(fiber.Config{
+        AppName: "User Service v1.0 - METRICS DISABLED", 
+    })
 
     // Add metrics middleware to track HTTP requests - TEMPORARILY DISABLED FOR DEBUG
     // app.Use(metrics.HTTPMetricsMiddleware("user-service"))
