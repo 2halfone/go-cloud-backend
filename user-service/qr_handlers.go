@@ -10,7 +10,6 @@ import (
     "user-service/database"
 
     "github.com/gofiber/fiber/v2"
-    "go-cloud-backend/shared/metrics"
 )
 
 // ============================================================================
@@ -124,7 +123,7 @@ func generateQRHandler(c *fiber.Ctx) error {
     }
     
     // Record QR event creation metric
-    metrics.QREventsTotal.WithLabelValues("user-service").Inc()
+    // metrics.QREventsTotal.WithLabelValues("user-service").Inc()
     
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "message":         "QR generato con successo",
@@ -214,14 +213,14 @@ func scanQRHandler(c *fiber.Ctx) error {
     if err != nil {
         log.Printf("Error saving attendance: %v", err)
         // Record failed QR scan metric
-        metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "failed", "user-service").Inc()
-        metrics.SystemErrorsTotal.WithLabelValues("user-service", "database_error").Inc()
+        // metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "failed", "user-service").Inc()
+        // // metrics.SystemErrorsTotal.WithLabelValues("user-service", "database_error").Inc()
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore salvataggio presenza",
         })
     }
       // Record successful QR scan metric
-    metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "success", "user-service").Inc()
+    // metrics.QRScansTotal.WithLabelValues(qrClaims.EventID, "success", "user-service").Inc()
 
     return c.Status(fiber.StatusCreated).JSON(fiber.Map{
         "success":     true,

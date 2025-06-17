@@ -22,7 +22,6 @@ import (
     "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
     
-    "go-cloud-backend/shared/metrics"
 )
 
 // JWT secret - loaded from environment variable JWT_SECRET
@@ -32,31 +31,6 @@ var jwtSecret []byte
 var authDB *sql.DB
 
 // Metrics middleware for HTTP requests
-func metricsMiddleware() fiber.Handler {
-    return func(c *fiber.Ctx) error {
-        start := time.Now()
-
-        // Process the request
-        err := c.Next()
-
-        duration := time.Since(start)
-        statusCode := strconv.Itoa(c.Response().StatusCode())        // Record metrics using shared metrics
-        metrics.HTTPRequestsTotal.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            statusCode,
-            "user-service",
-        ).Inc()
-
-        metrics.HTTPRequestDuration.WithLabelValues(
-            c.Method(),
-            c.Path(),
-            "user-service",
-        ).Observe(duration.Seconds())
-
-        return err
-    }
-}
 
 // Update active users count
 func updateActiveUsersCount() {    db := database.DB
@@ -64,7 +38,7 @@ func updateActiveUsersCount() {    db := database.DB
         var count int
         query := `SELECT COUNT(*) FROM users`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
+            // // // metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
         }
     }
 }
@@ -73,13 +47,11 @@ func updateActiveUsersCount() {    db := database.DB
 func updateDatabaseConnections() {
     db := database.DB
     if db != nil {
-        stats := db.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
+        // // // metrics.DatabaseConnections.WithLabelValues("user-service", "user_db").Set(float64(stats.OpenConnections))
     }
     
     if authDB != nil {
-        stats := authDB.Stats()
-        metrics.DatabaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
+        // // // metrics.DatabaseConnections.WithLabelValues("user-service", "auth_db").Set(float64(stats.OpenConnections))
     }
 }
 
@@ -89,7 +61,7 @@ func updateAttendanceEventsCount() {
     if db != nil {        var count int
         query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
-            metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
+            // // // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
         }
     }
 }
@@ -561,7 +533,7 @@ func main() {
     })
 
     // Add metrics middleware to track HTTP requests
-    app.Use(metricsMiddleware())
+    // app.Use(metricsMiddleware())
 
     // CORS restrittivo - accetta solo richieste dal Gateway
     app.Use(cors.New(cors.Config{
@@ -573,6 +545,8 @@ func main() {
     }))
 
     // Start periodic metrics updates
+    // TODO: Re-enable metrics collection once Prometheus issues are resolved
+    /*
     go func() {
         for {
             time.Sleep(30 * time.Second)
@@ -581,6 +555,7 @@ func main() {
             updateAttendanceEventsCount()
         }
     }()
+    */
 
     // Middleware per bloccare accessi diretti (opzionale in sviluppo)
     // app.Use(gatewayOnly)
