@@ -608,7 +608,7 @@ func main() {
     app.Get("/qr/attendance/today", getTodayAttendanceHandler)
 
     // Endpoint protetti utente
-    app.Get("/user/profile", userProfileHandler)
+    app.Get("/profile", userProfileHandler)
 
     // Endpoint per gestione utenti
     app.Get("/users", getUsersHandler)

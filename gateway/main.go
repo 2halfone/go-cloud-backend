@@ -35,6 +35,10 @@ func getTargetService(path string) string {
         return "user-service"
     } else if strings.HasPrefix(path, "/admin/") {
         return "auth-service"
+    } else if strings.HasPrefix(path, "/dashboard/") {
+        return "dashboard-api"
+    } else if strings.HasPrefix(path, "/monitoring/") {
+        return "prometheus-service"
     }
     return "gateway"
 }
@@ -283,112 +287,6 @@ func main() {
         }
         
         return err
-    })
-    
-    // -------------------------------------------------------    // Rotte pubbliche (senza JWT)
-    // -------------------------------------------------------    // Rotte di autenticazione - non richiedono JWT
-    app.All("/auth/*", func(c *fiber.Ctx) error {
-        // Strip /auth prefix and forward to auth-service
-        newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
-        if newPath == "" {
-            newPath = "/"
-        }
-        target := "http://auth-service:3001" + newPath
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)    })
-
-    // QR Attendance System - Public QR scanning
-    app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
-        target := "http://user-service:3002/qr/scan"
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
-    })    // Health checks pubblici
-    app.Get("/health", func(c *fiber.Ctx) error {
-        return c.JSON(fiber.Map{
-            "status":    "healthy",
-            "service":   "gateway",
-            "timestamp": time.Now().Format(time.RFC3339),
-            "version":   "1.0.0",
-        })
-    })
-
-    // Prometheus metrics endpoint (local service metrics)
-    app.Get("/metrics", func(c *fiber.Ctx) error {
-        handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
-        handler(c.Context())
-        return nil
-    })
-
-    // Prometheus monitoring access (proxy to internal Prometheus)
-    app.Get("/monitoring/*", func(c *fiber.Ctx) error {
-        // Remove /monitoring prefix and proxy to prometheus-service
-        path := strings.TrimPrefix(c.Path(), "/monitoring")
-        if path == "" {
-            path = "/"
-        }
-        
-        return proxy.Do(c, "http://prometheus-service:9090"+path)
-    })
-    
-    // -------------------------------------------------------    // Rotte pubbliche (senza JWT)
-    // -------------------------------------------------------    // Rotte di autenticazione - non richiedono JWT
-    app.All("/auth/*", func(c *fiber.Ctx) error {
-        // Strip /auth prefix and forward to auth-service
-        newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
-        if newPath == "" {
-            newPath = "/"
-        }
-        target := "http://auth-service:3001" + newPath
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)    })
-
-    // QR Attendance System - Public QR scanning
-    app.Post("/user/scan-qr", func(c *fiber.Ctx) error {
-        target := "http://user-service:3002/qr/scan"
-        
-        // Aggiungi header personalizzato per identificare richieste dal Gateway
-        c.Set("X-Gateway-Request", "gateway-v1.0")
-        
-        log.Printf("QR_SCAN_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
-    })    // Health checks pubblici
-    app.Get("/health", func(c *fiber.Ctx) error {
-        return c.JSON(fiber.Map{
-            "status":    "healthy",
-            "service":   "gateway",
-            "timestamp": time.Now().Format(time.RFC3339),
-            "version":   "1.0.0",
-        })
-    })
-
-    // Prometheus metrics endpoint (local service metrics)
-    app.Get("/metrics", func(c *fiber.Ctx) error {
-        handler := fasthttpadaptor.NewFastHTTPHandler(promhttp.Handler())
-        handler(c.Context())
-        return nil
-    })
-
-    // Prometheus monitoring access (proxy to internal Prometheus)
-    app.Get("/monitoring/*", func(c *fiber.Ctx) error {
-        // Remove /monitoring prefix and proxy to prometheus-service
-        path := strings.TrimPrefix(c.Path(), "/monitoring")
-        if path == "" {
-            path = "/"
-        }
-        
-        return proxy.Do(c, "http://prometheus-service:9090"+path)
     })
     
     // -------------------------------------------------------    // Rotte pubbliche (senza JWT)
@@ -908,3 +806,27 @@ func adminOnly(c *fiber.Ctx) error {
     }
     return c.Next()
 }
+
+// Dashboard API protetto - forward con path stripping
+app.All("/dashboard/*", func(c *fiber.Ctx) error {
+    // Rimuovi /dashboard dal path e forward al dashboard-api
+    path := strings.TrimPrefix(c.Path(), "/dashboard")
+    if path == "" {
+        path = "/"
+    }
+    target := "http://dashboard-api:3003" + path
+    if c.OriginalURL() != c.Path() {
+        // Mantieni query parameters
+        if strings.Contains(c.OriginalURL(), "?") {
+            target += "?" + strings.Split(c.OriginalURL(), "?")[1]
+        }
+    }
+    
+    // Aggiungi header personalizzato per identificare richieste dal Gateway
+    c.Set("X-Gateway-Request", "gateway-v1.0")
+    log.Printf("DASHBOARD_PROXY: %s %s -> %s [IP: %s, User: %s]", 
+        c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+    return proxy.Do(c, target)
+})
+
+// -------------------------------------------------------
