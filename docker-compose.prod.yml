@@ -105,8 +105,7 @@ services:
     restart: unless-stopped  # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
-    ports:
-      - "9090:9090"  # TEMPORANEO - Solo per testing/monitoring
+    # ports: - "9090:9090"  # RIMOSSO - Solo rete Docker interna per sicurezza
     volumes:
       - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
