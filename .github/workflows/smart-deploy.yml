@@ -110,24 +110,24 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Cleanup obsolete containers and images
+              # Cleanup obsolete containers and images
             echo "🧹 Cleaning up obsolete containers..."
             docker container prune -f
             docker image prune -f
             
+            # Fix Docker network issues after VM resize
+            echo "🌐 Resetting Docker network..."
+            docker-compose -f docker-compose.prod.yml down --remove-orphans
+            docker network prune -f
+            docker volume prune -f
+            
             # Build user-service (no cache if shared changed)
-            echo "🔨 Building user-service..."
+            echo "� Building user-service..."
             docker-compose -f docker-compose.prod.yml build --no-cache user-service
             
-            # Stop and remove old user-service container to prevent "exited" containers
-            echo "🛑 Stopping old user-service container..."
-            docker-compose -f docker-compose.prod.yml stop user-service || true
-            docker-compose -f docker-compose.prod.yml rm -f user-service || true
-            
-            # Start new user-service container
-            echo "🚀 Starting new user-service container..."
-            docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
+            # Start all services (needed for database connectivity)
+            echo "🚀 Starting all services for network connectivity..."
+            docker-compose -f docker-compose.prod.yml up -d
               # Health check
             echo "🏥 Health check..."
             sleep 10
