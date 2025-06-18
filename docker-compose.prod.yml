@@ -37,7 +37,8 @@ services:
     build:
       context: .
       dockerfile: ./auth-service/Dockerfile
-    # ports: - "3001:3001"  # RIMOSSO - Solo rete Docker interna
+    ports:
+      - "3001:3001"  # SOLO per WebSocket real-time events (frontend Flutter)
     environment:
       # stringa di connessione al nuovo PostgreSQL
       AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
@@ -101,11 +102,11 @@ services:
       - /:/rootfs:ro
     networks:
       - microservices-net
-    restart: unless-stopped
-  # --- Prometheus Monitoring Service ---
+    restart: unless-stopped  # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
-    # ports: - "9090:9090"  # RIMOSSO - Accesso solo tramite tunnel SSH o VPN
+    ports:
+      - "9090:9090"  # TEMPORANEO - Solo per testing/monitoring
     volumes:
       - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
