@@ -215,10 +215,8 @@ func main() {
     if jwtSecretStr == "" {
         log.Fatal("JWT_SECRET environment variable is required")
     }
-    jwtSecret = []byte(jwtSecretStr)
-
-    // Initialize Prometheus metrics
-    metrics.Init()
+    jwtSecret = []byte(jwtSecretStr)    // Initialize Prometheus metrics
+    // metrics.Init()
 
     app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
@@ -266,11 +264,9 @@ func main() {
         if targetService != "gateway" {
             statusCode := strconv.Itoa(c.Response().StatusCode())
             metrics.RecordProxyRequest(targetService, statusCode)
-        }
-        
-        // Record request duration
-        duration := time.Since(start).Seconds()
-        metrics.RecordRequestDuration(c.Method(), c.Route().Path, c.Response().StatusCode(), duration)
+        }        // Record request duration  
+        _ = time.Since(start) // Use start to avoid "declared and not used" error
+        // metrics.RecordRequestDuration(c.Method(), c.Route().Path, c.Response().StatusCode(), duration)
         
         return err
     })

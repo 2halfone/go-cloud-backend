@@ -9,6 +9,7 @@ import (
     "strconv"
     "strings"
     "time"
+    
     "user-service/database"
     "user-service/models"
     "user-service/utils"
@@ -18,8 +19,6 @@ import (
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/skip2/go-qrcode"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-    "github.com/valyala/fasthttp/fasthttpadaptor"
     _ "github.com/lib/pq"
     
     // TODO: Re-enable once Prometheus issues are resolved
@@ -37,7 +36,8 @@ func updateActiveUsersCount() {
     db := database.DB
     if db != nil {
         var count int
-        query := `SELECT COUNT(*) FROM users`        if err := db.QueryRow(query).Scan(&count); err == nil {
+        query := `SELECT COUNT(*) FROM users`
+        if err := db.QueryRow(query).Scan(&count); err == nil {
             // // // metrics.ActiveUsers.WithLabelValues("user-service").Set(float64(count))
         }
     }
@@ -57,7 +57,9 @@ func updateDatabaseConnections() {
 
 // Update attendance events count
 func updateAttendanceEventsCount() {
-    db := database.DB    if db != nil {        var count int
+    db := database.DB
+    if db != nil {
+        var count int
         query := `SELECT COUNT(*) FROM attendance_events WHERE is_active = true AND expires_at > NOW()`
         if err := db.QueryRow(query).Scan(&count); err == nil {
             // // // metrics.AttendanceEventsActive.WithLabelValues("user-service").Set(float64(count))
@@ -511,7 +513,7 @@ func connectAuthServiceDB() {
 
 func main() {
     // Initialize metrics
-    metrics.InitMetrics()
+    // metrics.InitMetrics()  // TODO: Re-enable once metrics are fixed
     
     // Initialize database connection
     database.Connect()
@@ -528,7 +530,9 @@ func main() {
     if jwtSecretEnv == "" {
         log.Fatal("JWT_SECRET environment variable not set")
     }
-    jwtSecret = []byte(jwtSecretEnv)    app := fiber.New(fiber.Config{
+    jwtSecret = []byte(jwtSecretEnv)
+    
+    app := fiber.New(fiber.Config{
         AppName: "User Service v1.0 - METRICS DISABLED", 
     })
 
