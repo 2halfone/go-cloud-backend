@@ -32,14 +32,12 @@ services:
     volumes:
       - auth_db_data:/var/lib/postgresql/data
     networks:
-      - microservices-net
-  # --- Auth Service (aggiornato con database) ---
+      - microservices-net  # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
       context: .
       dockerfile: ./auth-service/Dockerfile
-    ports:
-      - "3001:3001"
+    # ports: - "3001:3001"  # RIMOSSO - Solo rete Docker interna
     environment:
       # stringa di connessione al nuovo PostgreSQL
       AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
@@ -66,14 +64,12 @@ services:
     volumes:
       - user_db_data:/var/lib/postgresql/data
     networks:
-      - microservices-net
-  # --- User Service (aggiornato con database) ---
+      - microservices-net  # --- User Service (aggiornato con database) ---
   user-service:
     build:
       context: .
       dockerfile: ./user-service/Dockerfile
-    ports:
-      - "3002:3002"
+    # ports: - "3002:3002"  # RIMOSSO - Solo rete Docker interna
     environment:
       # stringa di connessione al nuovo PostgreSQL
       USER_DATABASE_URL: postgres://user_admin:user_password@user-db:5432/users_db?sslmode=disable
@@ -93,8 +89,7 @@ services:
       retries: 3  # --- Node Exporter for System Metrics ---
   node-exporter:
     image: prom/node-exporter:latest
-    ports:
-      - "9100:9100"
+    # ports: - "9100:9100"  # RIMOSSO - Solo rete Docker interna per sicurezza
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -107,12 +102,10 @@ services:
     networks:
       - microservices-net
     restart: unless-stopped
-
   # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
+    # ports: - "9090:9090"  # RIMOSSO - Accesso solo tramite tunnel SSH o VPN
     volumes:
       - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
@@ -128,14 +121,12 @@ services:
     networks:
       - microservices-net
     restart: unless-stopped
-
   # --- Dashboard API Service ---
   dashboard-api:
     build:
       context: ./monitoring/dashboard-api
       dockerfile: Dockerfile
-    ports:
-      - "3003:3003"
+    # ports: - "3003:3003"  # RIMOSSO - Solo rete Docker interna
     environment:
       # Database connections for metrics collection
       AUTH_DATABASE_URL: postgres://auth_admin:auth_password@auth-db:5432/auth_logs_db?sslmode=disable
@@ -153,19 +144,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - gateway
-    networks:
-      - microservices-net
-    restart: unless-stopped
+  # NGINX - INATTIVO per ora, decommentare quando necessario
+  # nginx:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - gateway
+  #   networks:
+  #     - microservices-net
+  #   restart: unless-stopped
 
 networks:
   microservices-net:
