@@ -128,11 +128,13 @@ jobs:
             # Start new user-service container
             echo "🚀 Starting new user-service container..."
             docker-compose -f docker-compose.prod.yml up -d --no-deps user-service
-            
-            # Health check
+              # Health check
             echo "🏥 Health check..."
             sleep 10
-            curl -f http://localhost:3002/health || exit 1
+            echo "🔍 Checking container logs..."
+            docker logs go-cloud-backend_user-service_1 --tail 20
+            echo "🩺 Testing health endpoint via docker exec..."
+            docker exec go-cloud-backend_user-service_1 curl -f http://localhost:3002/health || exit 1
             
             # Final container status check
             echo "📊 Container status:"
