@@ -6,7 +6,8 @@ import (
     "fmt"
     "log"
     "strings"
-    "time"    "user-service/database"
+    "time"
+    "user-service/database"
 
     "github.com/gofiber/fiber/v2"
 )
