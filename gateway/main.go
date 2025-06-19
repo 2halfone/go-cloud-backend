@@ -376,7 +376,8 @@ func main() {
     // 3) Protected user routes (JWT required)
     // -------------------------------------------------------
 
-    // Specific user routes BEFORE the general /user/* catch-all    app.Get("/user/profile", func(c *fiber.Ctx) error {
+    // Specific user routes BEFORE the general /user/* catch-all
+    app.Get("/user/profile", func(c *fiber.Ctx) error {
         log.Printf("DEBUG_PROFILE_START: Entering /user/profile handler")
         
         target := "http://user-service:3002/profile"
