@@ -374,11 +374,19 @@ func main() {
 
     // -------------------------------------------------------
     // 3) Protected user routes (JWT required)
-    // -------------------------------------------------------
-
-    // Specific user routes BEFORE the general /user/* catch-all
+    // -------------------------------------------------------    // Specific user routes BEFORE the general /user/* catch-all
     app.Get("/user/profile", func(c *fiber.Ctx) error {
         log.Printf("DEBUG_PROFILE_START: Entering /user/profile handler")
+        
+        // SAFETY CHECK: Ensure JWT validation succeeded
+        user := c.Locals("user")
+        if user == nil {
+            log.Printf("DEBUG_PROFILE_ERROR: No JWT user in locals - unauthorized access attempt")
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token non valido o mancante",
+                "code":  "JWT_REQUIRED",
+            })
+        }
         
         target := "http://user-service:3002/profile"
         log.Printf("DEBUG_PROFILE_TARGET: Target set to %s", target)
@@ -388,7 +396,7 @@ func main() {
         
         // Pass JWT claims as headers to user-service
         log.Printf("DEBUG_PROFILE_JWT_START: Starting JWT processing")
-        if user := c.Locals("user"); user != nil {
+        if user != nil {
             log.Printf("DEBUG_PROFILE_JWT_USER: User found in locals")
             if token, ok := user.(*jwt.Token); ok {
                 log.Printf("DEBUG_PROFILE_JWT_TOKEN: Token cast successful")
