@@ -376,10 +376,30 @@ func main() {
     // 3) Protected user routes (JWT required)
     // -------------------------------------------------------
 
-    // Specific user routes BEFORE the general /user/* catch-all
-    app.Get("/user/profile", func(c *fiber.Ctx) error {
+    // Specific user routes BEFORE the general /user/* catch-all    app.Get("/user/profile", func(c *fiber.Ctx) error {
         target := "http://user-service:3002/profile"
         c.Set("X-Gateway-Request", "gateway-v1.0")
+        
+        // Pass JWT claims as headers to user-service
+        if user := c.Locals("user"); user != nil {
+            if token, ok := user.(*jwt.Token); ok {
+                if claims, ok := token.Claims.(jwt.MapClaims); ok {
+                    if email, exists := claims["email"]; exists {
+                        c.Set("X-User-Email", fmt.Sprintf("%v", email))
+                    }
+                    if userID, exists := claims["user_id"]; exists {
+                        c.Set("X-User-ID", fmt.Sprintf("%v", userID))
+                    }
+                    if role, exists := claims["role"]; exists {
+                        c.Set("X-User-Role", fmt.Sprintf("%v", role))
+                    }
+                    if name, exists := claims["name"]; exists {
+                        c.Set("X-User-Name", fmt.Sprintf("%v", name))
+                    }
+                }
+            }
+        }
+        
         log.Printf("USER_PROFILE_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
         return proxy.Do(c, target)

@@ -404,14 +404,47 @@ func healthHandler(c *fiber.Ctx) error {
 }
 
 func userProfileHandler(c *fiber.Ctx) error {
-    user := c.Locals("user").(*jwt.Token)
-    claims := user.Claims.(jwt.MapClaims)
-    email := claims["email"].(string)
+    // Get user information from gateway headers
+    userEmail := c.Get("X-User-Email")
+    userID := c.Get("X-User-ID") 
+    userName := c.Get("X-User-Name")
+    userRole := c.Get("X-User-Role")
+    
+    // Fallback to JWT parsing if headers are not present (for backward compatibility)
+    if userEmail == "" {
+        if user := c.Locals("user"); user != nil {
+            if token, ok := user.(*jwt.Token); ok {
+                if claims, ok := token.Claims.(jwt.MapClaims); ok {
+                    if email, exists := claims["email"]; exists {
+                        userEmail = fmt.Sprintf("%v", email)
+                    }
+                    if id, exists := claims["user_id"]; exists {
+                        userID = fmt.Sprintf("%v", id)
+                    }
+                    if name, exists := claims["name"]; exists {
+                        userName = fmt.Sprintf("%v", name)
+                    }
+                    if role, exists := claims["role"]; exists {
+                        userRole = fmt.Sprintf("%v", role)
+                    }
+                }
+            }
+        }
+    }
+    
+    // If still no user information, return error
+    if userEmail == "" {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "User information not found",
+            "code":  "USER_INFO_MISSING",
+        })
+    }
 
     return c.JSON(fiber.Map{
-        "email":   email,
-        "name":    "Mario Rossi",
-        "userId":  "abc123",
+        "email":   userEmail,
+        "name":    userName,
+        "userId":  userID,
+        "role":    userRole,
     })
 }
 
