@@ -9,7 +9,8 @@ on:
       - 'gateway/**'
       - 'monitoring/**'
       - 'shared/**'
-      - 'docker-compose.prod.yml'      - '.github/workflows/**'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/**'
       - 'Makefile'
       - 'scripts/**'
 
