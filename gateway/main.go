@@ -229,9 +229,17 @@ func adminOnly(c *fiber.Ctx) error {
 
 // jwtError handles JWT authentication errors
 func jwtError(c *fiber.Ctx, err error) error {
+    defer func() {
+        if r := recover(); r != nil {
+            log.Printf("PANIC in jwtError: %v", r)
+        }
+    }()
+    
     log.Printf("JWT_ERROR: %s on %s from IP %s", err.Error(), c.Path(), c.IP())
     log.Printf("JWT_ERROR_DETAILS: Method=%s, Path=%s, Headers=%v", c.Method(), c.Path(), c.GetReqHeaders())
     metrics.RecordJWTValidation(false, "gateway")
+    
+    // Return a proper JSON error response
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error": "Token non valido o mancante",
         "code":  "JWT_INVALID",
@@ -240,6 +248,8 @@ func jwtError(c *fiber.Ctx, err error) error {
 }
 
 func main() {
+    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer fix - Build Time: %s", time.Now().Format(time.RFC3339))
+    
     // Load JWT secret from environment
     jwtSecretStr := os.Getenv("JWT_SECRET")
     if jwtSecretStr == "" {
