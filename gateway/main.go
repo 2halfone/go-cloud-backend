@@ -15,7 +15,7 @@ import (
     "github.com/gofiber/fiber/v2/middleware/helmet"
     "github.com/gofiber/fiber/v2/middleware/limiter"
     "github.com/gofiber/fiber/v2/middleware/proxy"
-    "github.com/gofiber/fiber/v2/middleware/recover"
+    fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/prometheus/client_golang/prometheus/promhttp"
@@ -248,16 +248,19 @@ func jwtError(c *fiber.Ctx, err error) error {
     })
 }
 
-func main() {
-    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer fix - Build Time: %s", time.Now().Format(time.RFC3339))
+func main() {    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer fix - Build Time: %s", time.Now().Format(time.RFC3339))
     
     // Load JWT secret from environment
     jwtSecretStr := os.Getenv("JWT_SECRET")
     if jwtSecretStr == "" {
         log.Fatal("JWT_SECRET environment variable is required")
     }
-    jwtSecret = []byte(jwtSecretStr)    // Initialize Prometheus metrics
-    // metrics.Init()    app := fiber.New(fiber.Config{
+    jwtSecret = []byte(jwtSecretStr)
+    
+    // Initialize Prometheus metrics
+    // metrics.Init()
+
+    app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
         TrustedProxies:          []string{"127.0.0.1", "::1"},
         ProxyHeader:             fiber.HeaderXForwardedFor,
@@ -284,7 +287,7 @@ func main() {
 
     // Security middleware
     app.Use(helmet.New())
-    app.Use(recover.New())
+    app.Use(fiberrecover.New())
 
     // Rate limiting
     app.Use(limiter.New(limiter.Config{
