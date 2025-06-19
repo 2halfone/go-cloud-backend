@@ -3,11 +3,7 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy shared module
 COPY shared/ ./shared/
-
-# Copy auth-service files
-COPY auth-service/go.mod ./
 COPY auth-service/ ./
 
 # Tidy and download dependencies (go.sum will be generated)

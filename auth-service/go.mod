@@ -4,7 +4,7 @@ go 1.23.0
 
 toolchain go1.24.3
 
-replace go-cloud-backend/shared => ../shared
+replace go-cloud-backend/shared => ./shared
 
 require (
 	github.com/gofiber/fiber/v2 v2.52.8
@@ -17,7 +17,7 @@ require (
 	golang.org/x/crypto v0.38.0
 )
 
-replace shared => ../shared
+replace shared => ./shared
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
