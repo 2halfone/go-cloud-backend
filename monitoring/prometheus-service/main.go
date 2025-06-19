@@ -5,7 +5,6 @@ import (
     "os"
     "time"
     
-    "prometheus-service/metrics"
     "prometheus-service/middleware"
     
     "github.com/gofiber/fiber/v2"

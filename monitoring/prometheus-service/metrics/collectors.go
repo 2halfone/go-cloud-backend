@@ -1,9 +1,5 @@
 package metrics
 
-import (
-    "github.com/prometheus/client_golang/prometheus"
-)
-
 // Il prometheus-service raccoglie solo metriche, non le definisce
 // Tutte le metriche sono definite in shared/metrics per evitare duplicazioni
 

@@ -87,13 +87,7 @@ func RequestResponseLogger() fiber.Handler {
             }
         }
         headers["User-Agent"] = c.Get("User-Agent")
-        
-        // Processa la richiesta
-        err := c.Next()
-        
-        duration := time.Since(start)
-        
-        // Estrai user ID dal JWT se presente (DOPO la validazione JWT)
+          // Estrai user ID dal JWT se presente
         var userID string
         if user := c.Locals("user"); user != nil {
             if token, ok := user.(*jwt.Token); ok {
@@ -102,8 +96,9 @@ func RequestResponseLogger() fiber.Handler {
                         userID = fmt.Sprintf("%v", id)
                     }
                 }
-            }        }
-        
+            }
+        }
+
         // Determina il servizio di destinazione
         var service string
         path := c.Path()
@@ -115,6 +110,11 @@ func RequestResponseLogger() fiber.Handler {
         default:
             service = "gateway"
         }
+        
+        // Processa la richiesta
+        err := c.Next()
+        
+        duration := time.Since(start)
         
         // Cattura il body della risposta se è JSON (limitato per sicurezza)
         var responseBody string
@@ -232,25 +232,61 @@ func adminOnly(c *fiber.Ctx) error {
 func jwtError(c *fiber.Ctx, err error) error {
     defer func() {
         if r := recover(); r != nil {
-            log.Printf("PANIC in jwtError: %v", r)
+            log.Printf("PANIC in jwtError: %v\n%s", r, debug.Stack())
         }
     }()
     
-    log.Printf("JWT_ERROR: %s on %s from IP %s", err.Error(), c.Path(), c.IP())
-    log.Printf("JWT_ERROR_DETAILS: Method=%s, Path=%s, Headers=%v", c.Method(), c.Path(), c.GetReqHeaders())
+    // Safe logging with nil checks
+    method := "UNKNOWN"
+    path := "UNKNOWN"
+    ip := "UNKNOWN"
+    if c != nil {
+        method = c.Method()
+        path = c.Path()
+        ip = c.IP()
+    }
+    
+    errorMsg := "Unknown JWT error"
+    if err != nil {
+        errorMsg = err.Error()
+    }
+    
+    log.Printf("JWT_ERROR: %s on %s %s from IP %s", errorMsg, method, path, ip)
+    
+    // Safe headers logging
+    if c != nil {
+        headers := make(map[string]string)
+        reqHeaders := c.GetReqHeaders()
+        if reqHeaders != nil {
+            for k, v := range reqHeaders {
+                if k == "Authorization" && len(v) > 0 {
+                    headers[k] = "[REDACTED]"
+                } else if len(v) > 0 {
+                    headers[k] = strings.Join(v, ",")
+                }
+            }
+        }
+        log.Printf("JWT_ERROR_DETAILS: Method=%s, Path=%s, Headers=%v", method, path, headers)
+    }
+    
+    // Record metrics safely
     metrics.RecordJWTValidation(false, "gateway")
     
     // Return a proper JSON error response
-    return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-        "error": "Token non valido o mancante",
-        "code":  "JWT_INVALID",
-        "details": err.Error(),
-    })
+    if c != nil {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+            "error": "Token non valido o mancante",
+            "code":  "JWT_INVALID",
+            "details": errorMsg,
+        })
+    }
+    
+    return fmt.Errorf("JWT error: %s", errorMsg)
 }
 
-func main() {    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer fix - Build Time: %s", time.Now().Format(time.RFC3339))
-    
-    // Load JWT secret from environment
+func main() {
+    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer fix - Build Time: %s", time.Now().Format(time.RFC3339))
+      // Load JWT secret from environment
     jwtSecretStr := os.Getenv("JWT_SECRET")
     if jwtSecretStr == "" {
         log.Fatal("JWT_SECRET environment variable is required")
@@ -259,7 +295,7 @@ func main() {    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer 
     
     // Initialize Prometheus metrics
     // metrics.Init()
-
+    
     app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
         TrustedProxies:          []string{"127.0.0.1", "::1"},
@@ -283,9 +319,7 @@ func main() {    log.Printf("GATEWAY STARTUP: Starting gateway with nil pointer 
         AllowMethods:     "GET,POST,HEAD,PUT,DELETE,PATCH,OPTIONS",
         AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Requested-With",
         AllowCredentials: false,
-    }))
-
-    // Security middleware
+    }))    // Security middleware
     app.Use(helmet.New())
     app.Use(fiberrecover.New())
 

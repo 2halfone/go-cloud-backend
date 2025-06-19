@@ -4,7 +4,7 @@ import (
     "strconv"
     "time"
     
-    "prometheus-service/metrics"
+    "go-cloud-backend/shared/metrics"
     
     "github.com/gofiber/fiber/v2"
 )
