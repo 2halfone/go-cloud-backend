@@ -6,7 +6,6 @@ WORKDIR /app
 COPY shared/ ./shared/
 
 # Copy prometheus-service files
-COPY monitoring/prometheus-service/go.mod ./
 COPY monitoring/prometheus-service/ ./
 
 # Tidy and download dependencies (go.sum will be generated)

@@ -7,7 +7,6 @@ WORKDIR /app
 COPY shared/ ./shared/
 
 # Copy user-service files
-COPY user-service/go.mod ./
 COPY user-service/ ./
 
 # Tidy and download dependencies (go.sum will be generated)
