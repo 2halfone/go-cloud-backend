@@ -5,31 +5,13 @@ on:
     branches: [ main ]
     paths:
       - 'auth-service/**'
-                    # Cleanup obsolete containers and images
-            echo "🧹 Cleaning up obsolete containers..."
-            docker container prune -f
-            docker image prune -f
-            
-            # AGGRESSIVE CLEANUP FOR DOCKERFILE FIXES
-            echo "🔥 Force cleaning build cache..."
-            docker builder prune -f --all
-            docker system prune -f --all --volumes
-            
-            # Fix Docker network issues after VM resize
-            echo "🌐 Resetting Docker network..."
-            docker-compose -f docker-compose.prod.yml down --remove-orphans
-            docker network prune -f
-            docker volume prune -f
-            
-            # Build user-service (no cache if shared changed)
-            echo "🔨 Building user-service..."ce/**'
+      - 'user-service/**'
       - 'gateway/**'
       - 'monitoring/**'
       - 'shared/**'
       - 'docker-compose.prod.yml'
       - '.github/workflows/**'
-      - 'Makefile'
-      - 'scripts/**'
+      - 'Makefile'      - 'scripts/**'
 
 jobs:
   detect-changes:
