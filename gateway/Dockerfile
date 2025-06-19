@@ -7,7 +7,6 @@ WORKDIR /app
 COPY shared/ ./shared/
 
 # Copy gateway files
-COPY gateway/go.mod ./
 COPY gateway/ ./
 
 # 7Tidy and download dependencies (go.sum will be generated)
