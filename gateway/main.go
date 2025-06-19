@@ -87,7 +87,13 @@ func RequestResponseLogger() fiber.Handler {
             }
         }
         headers["User-Agent"] = c.Get("User-Agent")
-          // Estrai user ID dal JWT se presente
+        
+        // Processa la richiesta
+        err := c.Next()
+        
+        duration := time.Since(start)
+        
+        // Estrai user ID dal JWT se presente (DOPO la validazione JWT)
         var userID string
         if user := c.Locals("user"); user != nil {
             if token, ok := user.(*jwt.Token); ok {
@@ -96,9 +102,8 @@ func RequestResponseLogger() fiber.Handler {
                         userID = fmt.Sprintf("%v", id)
                     }
                 }
-            }
-        }
-
+            }        }
+        
         // Determina il servizio di destinazione
         var service string
         path := c.Path()
@@ -110,11 +115,6 @@ func RequestResponseLogger() fiber.Handler {
         default:
             service = "gateway"
         }
-        
-        // Processa la richiesta
-        err := c.Next()
-        
-        duration := time.Since(start)
         
         // Cattura il body della risposta se è JSON (limitato per sicurezza)
         var responseBody string
