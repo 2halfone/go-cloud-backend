@@ -5,6 +5,7 @@ import (
     "fmt"
     "log"
     "os"
+    "runtime/debug"
     "strconv"
     "strings"
     "time"
@@ -256,12 +257,21 @@ func main() {
         log.Fatal("JWT_SECRET environment variable is required")
     }
     jwtSecret = []byte(jwtSecretStr)    // Initialize Prometheus metrics
-    // metrics.Init()
-
-    app := fiber.New(fiber.Config{
+    // metrics.Init()    app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
         TrustedProxies:          []string{"127.0.0.1", "::1"},
         ProxyHeader:             fiber.HeaderXForwardedFor,
+    })
+
+    // PANIC RECOVERY MIDDLEWARE - MUST BE FIRST
+    app.Use(func(c *fiber.Ctx) error {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("🔥 PANIC RECOVERED: %v\n%s", r, debug.Stack())
+                c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
+            }
+        }()
+        return c.Next()
     })
 
     // CORS middleware
