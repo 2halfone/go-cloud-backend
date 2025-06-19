@@ -8,7 +8,6 @@ COPY shared/ ./shared/
 
 # Copy gateway files
 COPY gateway/go.mod ./
-COPY gateway/go.sum ./
 COPY gateway/ ./
 
 RUN go mod tidy
