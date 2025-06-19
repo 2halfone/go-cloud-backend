@@ -2,11 +2,17 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
+
+# Copy shared module
 COPY shared/ ./shared/
-COPY user-service/go.mod user-service/go.sum ./
+
+# Copy user-service files
+COPY user-service/go.mod ./
+COPY user-service/ ./
+
+# Tidy and download dependencies (go.sum will be generated)
 RUN go mod tidy
 RUN go mod download
-COPY user-service/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage

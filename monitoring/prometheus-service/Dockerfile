@@ -1,10 +1,17 @@
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 
-COPY . .
+# Copy shared module
+COPY shared/ ./shared/
+
+# Copy prometheus-service files
+COPY monitoring/prometheus-service/go.mod ./
+COPY monitoring/prometheus-service/ ./
+
+# Tidy and download dependencies (go.sum will be generated)
+RUN go mod tidy
+RUN go mod download
 RUN go build -o prometheus-service .
 
 FROM alpine:latest
