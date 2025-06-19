@@ -10,7 +10,7 @@ COPY shared/ ./shared/
 COPY gateway/go.mod ./
 COPY gateway/ ./
 
-# Tidy and download dependencies (go.sum will be generated)
+# 7Tidy and download dependencies (go.sum will be generated)
 RUN go mod tidy
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
