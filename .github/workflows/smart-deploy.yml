@@ -5,7 +5,24 @@ on:
     branches: [ main ]
     paths:
       - 'auth-service/**'
-      - 'user-service/**'
+                    # Cleanup obsolete containers and images
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            
+            # AGGRESSIVE CLEANUP FOR DOCKERFILE FIXES
+            echo "🔥 Force cleaning build cache..."
+            docker builder prune -f --all
+            docker system prune -f --all --volumes
+            
+            # Fix Docker network issues after VM resize
+            echo "🌐 Resetting Docker network..."
+            docker-compose -f docker-compose.prod.yml down --remove-orphans
+            docker network prune -f
+            docker volume prune -f
+            
+            # Build user-service (no cache if shared changed)
+            echo "🔨 Building user-service..."ce/**'
       - 'gateway/**'
       - 'monitoring/**'
       - 'shared/**'
@@ -67,11 +84,15 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Cleanup obsolete containers and images
+              # Cleanup obsolete containers and images
             echo "🧹 Cleaning up obsolete containers..."
             docker container prune -f
             docker image prune -f
+            
+            # AGGRESSIVE CLEANUP FOR DOCKERFILE FIXES
+            echo "🔥 Force cleaning build cache..."
+            docker builder prune -f --all
+            docker system prune -f --all --volumes
             
             # Build auth-service (no cache if shared changed)
             echo "🔨 Building auth-service..."
@@ -155,11 +176,15 @@ jobs:
           script: |
             cd /home/frazerfrax1/go-cloud-backend
             git pull origin main
-            
-            # Cleanup obsolete containers and images
+              # Cleanup obsolete containers and images
             echo "🧹 Cleaning up obsolete containers..."
             docker container prune -f
             docker image prune -f
+            
+            # AGGRESSIVE CLEANUP FOR DOCKERFILE FIXES
+            echo "🔥 Force cleaning build cache..."
+            docker builder prune -f --all
+            docker system prune -f --all --volumes
             
             # Build gateway (always no cache since it's critical)
             echo "🔨 Building gateway..."
