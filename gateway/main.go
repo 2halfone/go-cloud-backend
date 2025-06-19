@@ -376,7 +376,8 @@ func main() {
     // 3) Protected user routes (JWT required)
     // -------------------------------------------------------
 
-    // Specific user routes BEFORE the general /user/* catch-all    app.Get("/user/profile", func(c *fiber.Ctx) error {
+    // Specific user routes BEFORE the general /user/* catch-all
+    app.Get("/user/profile", func(c *fiber.Ctx) error {
         target := "http://user-service:3002/profile"
         c.Set("X-Gateway-Request", "gateway-v1.0")
         
