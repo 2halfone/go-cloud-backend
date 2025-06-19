@@ -4,6 +4,7 @@ import (
     "encoding/json"
     "fmt"
     "log"
+    "net/http"
     "os"
     "strconv"
     "strings"
@@ -86,12 +87,13 @@ func RequestResponseLogger() fiber.Handler {
             }
         }
         headers["User-Agent"] = c.Get("User-Agent")
-          // Estrai user ID dal JWT se presente
+        
+        // Estrai user ID dal JWT se presente
         var userID string
         if user := c.Locals("user"); user != nil {
             if token, ok := user.(*jwt.Token); ok {
                 if claims, ok := token.Claims.(jwt.MapClaims); ok {
-                    if id, exists := claims["user_id"]; exists && id != nil {
+                    if id, exists := claims["user_id"]; exists {
                         userID = fmt.Sprintf("%v", id)
                     }
                 }
@@ -155,67 +157,38 @@ func RequestResponseLogger() fiber.Handler {
 
 // Get user ID from JWT token
 func getUserID(c *fiber.Ctx) string {
-    user := c.Locals("user")
-    if user == nil {
-        log.Printf("WARNING: getUserID called but c.Locals('user') is nil for path %s", c.Path())
-        return "unknown"
+    if user := c.Locals("user"); user != nil {
+        if token, ok := user.(*jwt.Token); ok {
+            if claims, ok := token.Claims.(jwt.MapClaims); ok {
+                if userID, exists := claims["user_id"]; exists {
+                    return fmt.Sprintf("%v", userID)
+                }
+            }
+        }
     }
-    
-    token, ok := user.(*jwt.Token)
-    if !ok {
-        log.Printf("WARNING: getUserID called but user is not a JWT token for path %s", c.Path())
-        return "unknown"
-    }
-    
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        log.Printf("WARNING: getUserID called but claims are not MapClaims for path %s", c.Path())
-        return "unknown"
-    }
-    
-    if userID, exists := claims["user_id"]; exists && userID != nil {
-        return fmt.Sprintf("%v", userID)
-    }
-    
-    log.Printf("WARNING: getUserID called but user_id claim not found for path %s", c.Path())
     return "unknown"
 }
 
 // Get user role from JWT token
 func getUserRole(c *fiber.Ctx) string {
-    user := c.Locals("user")
-    if user == nil {
-        log.Printf("WARNING: getUserRole called but c.Locals('user') is nil for path %s", c.Path())
-        return "user"
+    if user := c.Locals("user"); user != nil {
+        if token, ok := user.(*jwt.Token); ok {
+            if claims, ok := token.Claims.(jwt.MapClaims); ok {
+                if role, exists := claims["role"]; exists {
+                    return fmt.Sprintf("%v", role)
+                }
+            }
+        }
     }
-    
-    token, ok := user.(*jwt.Token)
-    if !ok {
-        log.Printf("WARNING: getUserRole called but user is not a JWT token for path %s", c.Path())
-        return "user"
-    }
-    
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        log.Printf("WARNING: getUserRole called but claims are not MapClaims for path %s", c.Path())
-        return "user"
-    }
-    
-    if role, exists := claims["role"]; exists && role != nil {
-        return fmt.Sprintf("%v", role)
-    }
-    
     return "user"
 }
 
 // Middleware per controllare ruolo admin
 func adminOnly(c *fiber.Ctx) error {
     role := getUserRole(c)
-    userID := getUserID(c)
-    
     if role != "admin" {
         log.Printf("ADMIN_ACCESS_DENIED: User %s with role '%s' tried to access admin endpoint %s", 
-            userID, role, c.Path())
+            getUserID(c), role, c.Path())
         
         return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
             "error": "Access denied. Admin role required.",
@@ -223,19 +196,17 @@ func adminOnly(c *fiber.Ctx) error {
         })
     }
     
-    log.Printf("ADMIN_ACCESS_GRANTED: Admin %s accessing %s", userID, c.Path())
+    log.Printf("ADMIN_ACCESS_GRANTED: Admin %s accessing %s", getUserID(c), c.Path())
     return c.Next()
 }
 
 // jwtError handles JWT authentication errors
 func jwtError(c *fiber.Ctx, err error) error {
     log.Printf("JWT_ERROR: %s on %s from IP %s", err.Error(), c.Path(), c.IP())
-    log.Printf("JWT_ERROR_DETAILS: Method=%s, Path=%s, Headers=%v", c.Method(), c.Path(), c.GetReqHeaders())
     metrics.RecordJWTValidation(false, "gateway")
     return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
         "error": "Token non valido o mancante",
         "code":  "JWT_INVALID",
-        "details": err.Error(),
     })
 }
 
@@ -245,8 +216,10 @@ func main() {
     if jwtSecretStr == "" {
         log.Fatal("JWT_SECRET environment variable is required")
     }
-    jwtSecret = []byte(jwtSecretStr)    // Initialize Prometheus metrics
-    // metrics.Init()
+    jwtSecret = []byte(jwtSecretStr)
+
+    // Initialize Prometheus metrics
+    metrics.Init()
 
     app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
@@ -294,9 +267,11 @@ func main() {
         if targetService != "gateway" {
             statusCode := strconv.Itoa(c.Response().StatusCode())
             metrics.RecordProxyRequest(targetService, statusCode)
-        }        // Record request duration  
-        _ = time.Since(start) // Use start to avoid "declared and not used" error
-        // metrics.RecordRequestDuration(c.Method(), c.Route().Path, c.Response().StatusCode(), duration)
+        }
+        
+        // Record request duration
+        duration := time.Since(start).Seconds()
+        metrics.RecordRequestDuration(c.Method(), c.Route().Path, c.Response().StatusCode(), duration)
         
         return err
     })
@@ -335,42 +310,22 @@ func main() {
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
         return proxy.Do(c, target)
-    })    // -------------------------------------------------------
+    })
+
+    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
     // -------------------------------------------------------
-    
-    // Add debugging middleware before JWT
-    app.Use(func(c *fiber.Ctx) error {
-        path := c.Path()
-        authHeader := c.Get("Authorization")
-        log.Printf("DEBUG_REQUEST: Method=%s, Path=%s, HasAuth=%v", c.Method(), path, authHeader != "")
-        
-        // Check if this should be a protected route
-        isPublic := strings.HasPrefix(path, "/auth/") || path == "/health" || path == "/metrics"
-        log.Printf("DEBUG_ROUTE: Path=%s, IsPublic=%v", path, isPublic)
-        
-        return c.Next()
-    })
     
     app.Use(jwtware.New(jwtware.Config{
         SigningKey:   jwtSecret,
         ErrorHandler: jwtError,
-        Filter: func(c *fiber.Ctx) bool {
-            // Skip JWT validation for public routes
-            path := c.Path()
-            shouldSkip := strings.HasPrefix(path, "/auth/") ||
-                         path == "/health" ||
-                         path == "/metrics"
-            log.Printf("DEBUG_JWT_FILTER: Path=%s, ShouldSkip=%v", path, shouldSkip)
-            return shouldSkip
-        },
-        SuccessHandler: func(c *fiber.Ctx) error {
-            // Record successful JWT validation
-            log.Printf("DEBUG_JWT_SUCCESS: Path=%s", c.Path())
-            metrics.RecordJWTValidation(true, "gateway")
-            return c.Next()
-        },
     }))
+
+    // JWT validation success tracking
+    app.Use(func(c *fiber.Ctx) error {
+        metrics.RecordJWTValidation(true, "gateway")
+        return c.Next()
+    })
 
     // -------------------------------------------------------
     // 3) Protected user routes (JWT required)
