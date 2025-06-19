@@ -201,6 +201,9 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
+    // Debug: logga il payload ricevuto (senza password)
+    log.Printf("LOGIN_DEBUG: Received login request - email='%s', username='%s'", req.Email, req.Username)
+
     // Supporta sia email che username come identificatore per login
     // Priorità: username se fornito, altrimenti email
     var identifier string
@@ -215,33 +218,42 @@ func loginHandler(c *fiber.Ctx) error {
     }
 
     log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
-      // Cerca l'utente nel database PostgreSQL
+    // Cerca l'utente nel database PostgreSQL
     var user User
     selectQuery := `SELECT id, email, username, name, surname, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
         &user.ID, &user.Email, &user.Username, &user.Name, &user.Surname, &user.Password, &user.Role, &user.CreatedAt)
-    
+
     if err == sql.ErrNoRows {
-        log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)        // Log failed login attempt        go models.LogAuthActionDetailed(identifier, "", "login_failed_user_not_found", c.IP(), c.Get("User-Agent"), false)
-        // Record failed login metric
+        log.Printf("LOGIN_FAILED: identifier '%s' not found in database", identifier)
         metrics.RecordAuthAttempt(false, "auth-service")
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
-    } else if err != nil {        log.Printf("LOGIN_ERROR: Database query failed - %v", err)
-        // TODO: Record system error metric when implemented
-        // systemErrorsTotal.WithLabelValues("auth-service", "database_error").Inc()
+    } else if err != nil {
+        log.Printf("LOGIN_ERROR: Database query failed - %v", err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "error": "Errore interno del server",
             "code":  "DATABASE_ERROR",
         })
     }
 
+    // Debug: logga la lunghezza e presenza della password hashata
+    log.Printf("LOGIN_DEBUG: user.ID=%d, user.Email=%s, user.Password.len=%d", user.ID, user.Email, len(user.Password))
+
+    // Controllo di sicurezza: password non deve essere vuota
+    if user.Password == "" {
+        log.Printf("LOGIN_ERROR: Password hash vuoto per user.ID=%d, identifier='%s'", user.ID, identifier)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Password non impostata per l'utente",
+            "code":  "PASSWORD_NOT_SET",
+        })
+    }
+
     // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-        log.Printf("LOGIN_FAILED: Invalid password for identifier '%s'", identifier)        // Log failed login attempt with wrong password        go models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false)
-        // Record failed login metric
+        log.Printf("LOGIN_FAILED: Invalid password for identifier '%s' (user.ID=%d)", identifier, user.ID)
         metrics.RecordAuthAttempt(false, "auth-service")
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
