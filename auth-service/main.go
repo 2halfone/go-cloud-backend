@@ -254,6 +254,10 @@ func loginHandler(c *fiber.Ctx) error {
     // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
         log.Printf("LOGIN_FAILED: Invalid password for identifier '%s' (user.ID=%d)", identifier, user.ID)
+        // Log fallimento autenticazione con dettagli, gestendo errori
+        if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false); logErr != nil {
+            log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+        }
         metrics.RecordAuthAttempt(false, "auth-service")
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
@@ -278,11 +282,12 @@ func loginHandler(c *fiber.Ctx) error {
             "code":  "JWT_ERROR",
         })
     }
-    
+
+    // Log the successful authentication con gestione errori
+    if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true); logErr != nil {
+        log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+    }
     log.Printf("LOGIN_SUCCESS: user_id=%d, email=%s", user.ID, user.Email)
-    
-    // Log the successful authentication with details
-    go models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true)      // Record successful login metric
     metrics.RecordAuthAttempt(true, "auth-service")
 
     return c.JSON(fiber.Map{
