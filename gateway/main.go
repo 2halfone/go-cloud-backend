@@ -388,44 +388,51 @@ func main() {
             })
         }
         
+        log.Printf("DEBUG_PROFILE_JWT_VALID: JWT user found in locals, proceeding")
+        
         target := "http://user-service:3002/profile"
         log.Printf("DEBUG_PROFILE_TARGET: Target set to %s", target)
         
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("DEBUG_PROFILE_HEADER: Set X-Gateway-Request header")
-        
-        // Pass JWT claims as headers to user-service
+          // Pass JWT claims as headers to user-service
         log.Printf("DEBUG_PROFILE_JWT_START: Starting JWT processing")
-        if user != nil {
-            log.Printf("DEBUG_PROFILE_JWT_USER: User found in locals")
-            if token, ok := user.(*jwt.Token); ok {
-                log.Printf("DEBUG_PROFILE_JWT_TOKEN: Token cast successful")
-                if claims, ok := token.Claims.(jwt.MapClaims); ok {
-                    log.Printf("DEBUG_PROFILE_JWT_CLAIMS: Claims cast successful")
-                    if userID, exists := claims["user_id"]; exists {
-                        c.Set("X-User-ID", fmt.Sprintf("%v", userID))
-                        log.Printf("DEBUG_PROFILE_USERID: Set X-User-ID = %v", userID)
-                    }
-                    if email, exists := claims["email"]; exists {
-                        c.Set("X-User-Email", fmt.Sprintf("%v", email))
-                        log.Printf("DEBUG_PROFILE_EMAIL: Set X-User-Email = %v", email)
-                    }
-                    if role, exists := claims["role"]; exists {
-                        c.Set("X-User-Role", fmt.Sprintf("%v", role))
-                        log.Printf("DEBUG_PROFILE_ROLE: Set X-User-Role = %v", role)
-                    }
-                    if name, exists := claims["name"]; exists {
-                        c.Set("X-User-Name", fmt.Sprintf("%v", name))
-                        log.Printf("DEBUG_PROFILE_NAME: Set X-User-Name = %v", name)
-                    }
-                } else {
-                    log.Printf("DEBUG_PROFILE_JWT_ERROR: Claims cast failed")
-                }
-            } else {
-                log.Printf("DEBUG_PROFILE_JWT_ERROR: Token cast failed")
-            }
-        } else {
-            log.Printf("DEBUG_PROFILE_JWT_ERROR: No user found in locals")
+        // We already validated user is not nil above
+        token, ok := user.(*jwt.Token)
+        if !ok {
+            log.Printf("DEBUG_PROFILE_JWT_ERROR: Token cast failed")
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token invalido",
+                "code":  "JWT_INVALID_FORMAT",
+            })
+        }
+        
+        log.Printf("DEBUG_PROFILE_JWT_TOKEN: Token cast successful")
+        claims, ok := token.Claims.(jwt.MapClaims)
+        if !ok {
+            log.Printf("DEBUG_PROFILE_JWT_ERROR: Claims cast failed")
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token claims invalidi",
+                "code":  "JWT_INVALID_CLAIMS",
+            })
+        }
+        
+        log.Printf("DEBUG_PROFILE_JWT_CLAIMS: Claims cast successful")
+        if userID, exists := claims["user_id"]; exists {
+            c.Set("X-User-ID", fmt.Sprintf("%v", userID))
+            log.Printf("DEBUG_PROFILE_USERID: Set X-User-ID = %v", userID)
+        }
+        if email, exists := claims["email"]; exists {
+            c.Set("X-User-Email", fmt.Sprintf("%v", email))
+            log.Printf("DEBUG_PROFILE_EMAIL: Set X-User-Email = %v", email)
+        }
+        if role, exists := claims["role"]; exists {
+            c.Set("X-User-Role", fmt.Sprintf("%v", role))
+            log.Printf("DEBUG_PROFILE_ROLE: Set X-User-Role = %v", role)
+        }
+        if name, exists := claims["name"]; exists {
+            c.Set("X-User-Name", fmt.Sprintf("%v", name))
+            log.Printf("DEBUG_PROFILE_NAME: Set X-User-Name = %v", name)
         }
         log.Printf("DEBUG_PROFILE_JWT_END: JWT processing completed")
         
@@ -437,10 +444,16 @@ func main() {
         err := proxy.Do(c, target)
         log.Printf("DEBUG_PROFILE_PROXY_RESULT: proxy.Do returned, err = %v", err)
         return err
-    })
-
-    // QR User routes (JWT protected)
+    })    // QR User routes (JWT protected)
     app.Post("/user/qr/scan", func(c *fiber.Ctx) error {
+        // Safety check for JWT validation
+        if c.Locals("user") == nil {
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token non valido o mancante",
+                "code":  "JWT_REQUIRED",
+            })
+        }
+        
         target := "http://user-service:3002/qr/scan"
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("QR_SCAN_AUTH_PROXY: %s %s -> %s [IP: %s, User: %s]", 
@@ -449,6 +462,14 @@ func main() {
     })
 
     app.Get("/user/qr/attendance/history", func(c *fiber.Ctx) error {
+        // Safety check for JWT validation
+        if c.Locals("user") == nil {
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token non valido o mancante",
+                "code":  "JWT_REQUIRED",
+            })
+        }
+        
         target := "http://user-service:3002/qr/attendance/history"
         if c.OriginalURL() != c.Path() && strings.Contains(c.OriginalURL(), "?") {
             target += "?" + strings.Split(c.OriginalURL(), "?")[1]
@@ -460,6 +481,14 @@ func main() {
     })
 
     app.Get("/user/qr/attendance/today", func(c *fiber.Ctx) error {
+        // Safety check for JWT validation
+        if c.Locals("user") == nil {
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token non valido o mancante",
+                "code":  "JWT_REQUIRED",
+            })
+        }
+        
         target := "http://user-service:3002/qr/attendance/today"
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("QR_TODAY_PROXY: %s %s -> %s [IP: %s, User: %s]", 
@@ -469,6 +498,14 @@ func main() {
 
     // General user routes (catch-all for other /user/* routes)
     app.All("/user/*", func(c *fiber.Ctx) error {
+        // Safety check for JWT validation
+        if c.Locals("user") == nil {
+            return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+                "error": "Token non valido o mancante",
+                "code":  "JWT_REQUIRED",
+            })
+        }
+        
         // Strip /user prefix and forward to user-service
         path := strings.TrimPrefix(c.Path(), "/user")
         if path == "" {
