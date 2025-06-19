@@ -376,54 +376,34 @@ func main() {
     // 3) Protected user routes (JWT required)
     // -------------------------------------------------------
 
-    // Specific user routes BEFORE the general /user/* catch-all    app.Get("/user/profile", func(c *fiber.Ctx) error {
-        log.Printf("DEBUG_PROFILE_START: Starting /user/profile handler")
-        
+    // Specific user routes BEFORE the general /user/* catch-all
+    app.Get("/user/profile", func(c *fiber.Ctx) error {
         target := "http://user-service:3002/profile"
         c.Set("X-Gateway-Request", "gateway-v1.0")
         
-        log.Printf("DEBUG_PROFILE_TARGET: Target URL = %s", target)
-        
         // Pass JWT claims as headers to user-service
         if user := c.Locals("user"); user != nil {
-            log.Printf("DEBUG_PROFILE_JWT: JWT user found in locals")
             if token, ok := user.(*jwt.Token); ok {
-                log.Printf("DEBUG_PROFILE_TOKEN: JWT token cast successful")
                 if claims, ok := token.Claims.(jwt.MapClaims); ok {
-                    log.Printf("DEBUG_PROFILE_CLAIMS: JWT claims extracted successfully")
-                    if email, exists := claims["email"]; exists {
-                        c.Set("X-User-Email", fmt.Sprintf("%v", email))
-                        log.Printf("DEBUG_PROFILE_EMAIL: Set X-User-Email = %v", email)
-                    }
                     if userID, exists := claims["user_id"]; exists {
                         c.Set("X-User-ID", fmt.Sprintf("%v", userID))
-                        log.Printf("DEBUG_PROFILE_USERID: Set X-User-ID = %v", userID)
+                    }
+                    if email, exists := claims["email"]; exists {
+                        c.Set("X-User-Email", fmt.Sprintf("%v", email))
                     }
                     if role, exists := claims["role"]; exists {
                         c.Set("X-User-Role", fmt.Sprintf("%v", role))
-                        log.Printf("DEBUG_PROFILE_ROLE: Set X-User-Role = %v", role)
                     }
                     if name, exists := claims["name"]; exists {
                         c.Set("X-User-Name", fmt.Sprintf("%v", name))
-                        log.Printf("DEBUG_PROFILE_NAME: Set X-User-Name = %v", name)
                     }
-                } else {
-                    log.Printf("DEBUG_PROFILE_ERROR: Failed to cast claims to jwt.MapClaims")
                 }
-            } else {
-                log.Printf("DEBUG_PROFILE_ERROR: Failed to cast user to *jwt.Token")
             }
-        } else {
-            log.Printf("DEBUG_PROFILE_ERROR: No JWT user found in locals")
         }
         
-        log.Printf("DEBUG_PROFILE_PROXY: About to call proxy.Do with target: %s", target)
         log.Printf("USER_PROFILE_PROXY: %s %s -> %s [IP: %s, User: %s]", 
             c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-        
-        err := proxy.Do(c, target)
-        log.Printf("DEBUG_PROFILE_RESULT: proxy.Do returned, err = %v", err)
-        return err
+        return proxy.Do(c, target)
     })
 
     // QR User routes (JWT protected)
