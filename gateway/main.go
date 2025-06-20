@@ -295,7 +295,7 @@ func main() {
     jwtSecret = []byte(jwtSecretStr)
     
     // Initialize Prometheus metrics
-    // metrics.Init()
+    metrics.InitMetrics()
     
     app := fiber.New(fiber.Config{
         EnableTrustedProxyCheck: true,
