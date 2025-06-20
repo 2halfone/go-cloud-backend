@@ -17,7 +17,6 @@ import (
     "github.com/gofiber/fiber/v2/middleware/helmet"
     "github.com/gofiber/fiber/v2/middleware/limiter"
     "github.com/gofiber/fiber/v2/middleware/proxy"
-    fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
     jwtware "github.com/gofiber/jwt/v3"
     "github.com/golang-jwt/jwt/v4"
     "github.com/prometheus/client_golang/prometheus/promhttp"
