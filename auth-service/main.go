@@ -586,7 +586,7 @@ func getUserFromJWT(c *fiber.Ctx) (int, string, string, string, error) {
 func main() {
     // Initialize metrics system
     metrics.InitMetrics()
-    
+
     // Load JWT secret from environment variable
     jwtSecretEnv := os.Getenv("JWT_SECRET")
     if jwtSecretEnv == "" {
@@ -598,13 +598,33 @@ func main() {
     database.Connect()
     app := fiber.New()
 
-    // Middleware per loggare i panic con stacktrace
+    // PRIMO middleware: recover di Fiber
     app.Use(recover.New(recover.Config{
         EnableStackTrace: true,
         StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
             log.Printf("PANIC: %v", e)
+            log.Printf("REQUEST: %s %s", c.Method(), c.OriginalURL())
+            log.Printf("HEADERS: %v", c.GetReqHeaders())
         },
     }))
+
+    // Middleware recover globale personalizzato per loggare stacktrace e request
+    app.Use(func(c *fiber.Ctx) error {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("GLOBAL_PANIC: %v", r)
+                log.Printf("REQUEST: %s %s", c.Method(), c.OriginalURL())
+                log.Printf("HEADERS: %v", c.GetReqHeaders())
+                // Risposta JSON coerente
+                _ = c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+                    "error":   "Errore interno del server (panic)",
+                    "code":    "INTERNAL_PANIC_GLOBAL",
+                    "details": fmt.Sprintf("%v", r),
+                })
+            }
+        }()
+        return c.Next()
+    })
 
     // Add metrics middleware to track HTTP requests
     app.Use(metrics.HTTPMetricsMiddleware("auth-service"))
