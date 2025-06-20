@@ -309,7 +309,12 @@ func main() {
         defer func() {
             if r := recover(); r != nil {
                 log.Printf("[PANIC_HANDLER] PANIC RECOVERED: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
-                c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
+                // Risposta JSON coerente per panic
+                _ = c.Status(500).JSON(fiber.Map{
+                    "error":   "Errore interno del gateway (panic)",
+                    "code":    "GATEWAY_PANIC",
+                    "details": fmt.Sprintf("%v", r),
+                })
             }
         }()
         return c.Next()
@@ -387,7 +392,11 @@ func main() {
         defer func() {
             if r := recover(); r != nil {
                 log.Printf("[PANIC_HANDLER] PANIC in /auth/*: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
-                c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
+                _ = c.Status(500).JSON(fiber.Map{
+                    "error":   "Errore interno del gateway (panic)",
+                    "code":    "GATEWAY_PANIC_AUTH",
+                    "details": fmt.Sprintf("%v", r),
+                })
             }
         }()
         // Strip /auth prefix and forward to auth-service
