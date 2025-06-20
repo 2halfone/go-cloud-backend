@@ -2,8 +2,10 @@
 package models
 
 import (
-    "time"
     "auth-service/database"
+    "fmt"
+    "log"
+    "time"
 )
 
 type AuthLog struct {
@@ -24,9 +26,22 @@ func LogAuthAction(userEmail, action string) error {
 }
 
 // LogAuthActionDetailed logs authentication with additional details
-func LogAuthActionDetailed(userEmail, username, action, ipAddress, userAgent string, success bool) error {
+func LogAuthActionDetailed(userEmail, username, action, ipAddress, userAgent string, success bool) (err error) {
+    defer func() {
+        if r := recover(); r != nil {
+            log.Printf("PANIC in LogAuthActionDetailed: %v (userEmail=%s, action=%s)", r, userEmail, action)
+            err = fmt.Errorf("panic: %v", r)
+        }
+    }()
+    if database.DB == nil {
+        log.Printf("LogAuthActionDetailed: database.DB is nil! userEmail=%s, action=%s", userEmail, action)
+        return fmt.Errorf("database.DB is nil")
+    }
     query := `INSERT INTO auth_logs (user_email, action, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, $5)`
-    _, err := database.DB.Exec(query, userEmail, action, ipAddress, userAgent, success)
+    _, err = database.DB.Exec(query, userEmail, action, ipAddress, userAgent, success)
+    if err != nil {
+        log.Printf("LogAuthActionDetailed: DB Exec error: %v (userEmail=%s, action=%s)", err, userEmail, action)
+    }
     return err
 }
 
