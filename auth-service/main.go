@@ -193,6 +193,27 @@ type loginRequest struct {
 }
 
 func loginHandler(c *fiber.Ctx) error {
+    defer func() {
+        if r := recover(); r != nil {
+            log.Printf("LOGIN_PANIC: %v", r)
+            // Restituisci sempre una risposta JSON coerente
+            _ = c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+                "error":   "Errore interno del server (panic)",
+                "code":    "INTERNAL_PANIC",
+                "details": fmt.Sprintf("%v", r),
+            })
+        }
+    }()
+
+    // Controllo robusto su database.DB
+    if database.DB == nil {
+        log.Printf("LOGIN_ERROR: database.DB is nil")
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Database non disponibile",
+            "code":  "DB_NOT_AVAILABLE",
+        })
+    }
+
     var req loginRequest
     if err := c.BodyParser(&req); err != nil {
         log.Printf("LOGIN_ERROR: Invalid payload - %v", err)
@@ -202,11 +223,8 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
-    // Debug: logga il payload ricevuto (senza password)
     log.Printf("LOGIN_DEBUG: Received login request - email='%s', username='%s'", req.Email, req.Username)
 
-    // Supporta sia email che username come identificatore per login
-    // Priorità: username se fornito, altrimenti email
     var identifier string
     if req.Username != "" {
         identifier = req.Username
@@ -215,11 +233,11 @@ func loginHandler(c *fiber.Ctx) error {
     } else {
         return c.Status(400).JSON(fiber.Map{
             "error": "Email o username richiesti",
-            "code":  "MISSING_IDENTIFIER",        })
+            "code":  "MISSING_IDENTIFIER",
+        })
     }
 
     log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
-    // Cerca l'utente nel database PostgreSQL
     var user User
     selectQuery := `SELECT id, email, username, name, surname, password, role, created_at FROM users WHERE email = $1 OR username = $1`
     err := database.DB.QueryRow(selectQuery, identifier).Scan(
@@ -240,10 +258,8 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
-    // Debug: logga la lunghezza e presenza della password hashata
     log.Printf("LOGIN_DEBUG: user.ID=%d, user.Email=%s, user.Password.len=%d", user.ID, user.Email, len(user.Password))
 
-    // Controllo di sicurezza: password non deve essere vuota
     if user.Password == "" {
         log.Printf("LOGIN_ERROR: Password hash vuoto per user.ID=%d, identifier='%s'", user.ID, identifier)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -252,28 +268,31 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
-    // Verifica password
     if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
         log.Printf("LOGIN_FAILED: Invalid password for identifier '%s' (user.ID=%d)", identifier, user.ID)
-        // Log fallimento autenticazione con dettagli, gestendo errori
-        if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false); logErr != nil {
-            log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+        // Log fallimento autenticazione con gestione errori logging
+        if database.DB != nil {
+            if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_failed_wrong_password", c.IP(), c.Get("User-Agent"), false); logErr != nil {
+                log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+            }
         }
         metrics.RecordAuthAttempt(false, "auth-service")
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
             "error": "Credenziali errate",
             "code":  "INVALID_CREDENTIALS",
         })
-    }// Genera JWT
+    }
+
+    // Genera JWT
     token := jwt.New(jwt.SigningMethodHS256)
     claims := token.Claims.(jwt.MapClaims)
-    claims["email"] = user.Email     // mantiene email per compatibilità
-    claims["user_id"] = user.ID      // ID numerico dal database
-    claims["role"] = user.Role       // ruolo utente per autorizzazione
-    claims["name"] = user.Name       // nome utente per QR attendance
-    claims["surname"] = user.Surname // cognome utente per QR attendance
-    claims["identifier"] = identifier // campo esplicito per l'identificatore usato
-    claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // scade dopo 24h
+    claims["email"] = user.Email
+    claims["user_id"] = user.ID
+    claims["role"] = user.Role
+    claims["name"] = user.Name
+    claims["surname"] = user.Surname
+    claims["identifier"] = identifier
+    claims["exp"] = time.Now().Add(24 * time.Hour).Unix()
 
     tokenString, err := token.SignedString(jwtSecret)
     if err != nil {
@@ -284,16 +303,19 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
-    // Log the successful authentication con gestione errori
-    if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true); logErr != nil {
-        log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+    // Log the successful authentication con gestione errori logging
+    if database.DB != nil {
+        if logErr := models.LogAuthActionDetailed(user.Email, user.Username, "login_success", c.IP(), c.Get("User-Agent"), true); logErr != nil {
+            log.Printf("LOGIN_LOG_ERROR: %v", logErr)
+        }
     }
     log.Printf("LOGIN_SUCCESS: user_id=%d, email=%s", user.ID, user.Email)
     metrics.RecordAuthAttempt(true, "auth-service")
 
     return c.JSON(fiber.Map{
-        "token":        tokenString,        "access_token": tokenString, // Per compatibilità Flutter
-        "expires_in":   86400,       // 24 ore in secondi
+        "token":        tokenString,
+        "access_token": tokenString,
+        "expires_in":   86400,
         "user": fiber.Map{
             "id":       user.ID,
             "email":    user.Email,
