@@ -433,7 +433,6 @@ func main() {
         }
         log.Printf("TRACE: dopo io.ReadAll, body=%s", string(respBody))
         log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode, string(respBody))
-        c.Status(resp.StatusCode)
         // Copy headers from upstream BEFORE sending the body
         for k, vals := range resp.Header {
             for _, v := range vals {
@@ -441,10 +440,10 @@ func main() {
             }
         }
         log.Printf("TRACE: dopo copia headers da upstream")
-        // Send the response body and return
-        log.Printf("TRACE: prima di c.Send(respBody)")
+        // Send the response body and return (NO SetBodyRaw!)
+        log.Printf("TRACE: prima di return c.Status(resp.StatusCode).Send(respBody)")
         log.Printf("TRACE: fine handler /auth/*")
-        return c.Send(respBody)
+        return c.Status(resp.StatusCode).Send(respBody)
     })    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
     // -------------------------------------------------------
