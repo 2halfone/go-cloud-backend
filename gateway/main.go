@@ -389,6 +389,7 @@ func main() {
 
     // Auth routes (no JWT required)
     app.All("/auth/*", func(c *fiber.Ctx) error {
+        log.Printf("TRACE: INIZIO handler /auth/*")
         defer func() {
             if r := recover(); r != nil {
                 log.Printf("[PANIC_HANDLER] PANIC in /auth/*: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
@@ -399,44 +400,50 @@ func main() {
                 })
             }
         }()
-        // Strip /auth prefix and forward to auth-service
+        log.Printf("TRACE: dopo defer recover, prima strip prefix")
         newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
         if newPath == "" {
             newPath = "/"
         }
+        log.Printf("TRACE: dopo strip prefix, newPath=%s", newPath)
         target := "http://auth-service:3001" + newPath
         c.Set("X-Gateway-Request", "gateway-v1.0")
-        log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        // --- PATCH: HTTP client proxy robusto ---
+        log.Printf("TRACE: prima HTTP NewRequest, target=%s", target)
         reqBody := c.Body()
         req, err := http.NewRequest(c.Method(), target, strings.NewReader(string(reqBody)))
         if err != nil {
             log.Printf("[ERROR_500] AUTH_PROXY NewRequest error: %v", err)
             return c.Status(502).SendString("Gateway error: " + err.Error())
         }
-        // Copia headers
+        log.Printf("TRACE: dopo HTTP NewRequest")
         c.Request().Header.VisitAll(func(k, v []byte) {
             req.Header.Set(string(k), string(v))
         })
-        // Esegui richiesta
+        log.Printf("TRACE: dopo copia headers")
         client := &http.Client{}
         resp, err := client.Do(req)
         if err != nil {
             log.Printf("[ERROR_500] AUTH_PROXY client.Do error: %v", err)
             return c.Status(502).SendString("Gateway error: " + err.Error())
         }
+        log.Printf("TRACE: dopo client.Do, status=%d", resp.StatusCode)
         defer resp.Body.Close()
-        respBody, _ := io.ReadAll(resp.Body)
+        respBody, readErr := io.ReadAll(resp.Body)
+        if readErr != nil {
+            log.Printf("[ERROR_500] AUTH_PROXY io.ReadAll error: %v", readErr)
+        }
+        log.Printf("TRACE: dopo io.ReadAll, body=%s", string(respBody))
         log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode, string(respBody))
-        // Copia status e body
         c.Status(resp.StatusCode)
+        log.Printf("TRACE: dopo c.Status(%d)", resp.StatusCode)
         c.Response().SetBodyRaw(respBody)
-        // Copia headers rilevanti
+        log.Printf("TRACE: dopo SetBodyRaw")
         for k, vals := range resp.Header {
             for _, v := range vals {
                 c.Set(k, v)
             }
         }
+        log.Printf("TRACE: fine handler /auth/*")
         return nil
     })    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
