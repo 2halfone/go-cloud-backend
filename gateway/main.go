@@ -3,7 +3,9 @@ package main
 import (
     "encoding/json"
     "fmt"
+    "io"
     "log"
+    "net/http"
     "os"
     "runtime/debug"
     "strconv"
@@ -396,19 +398,35 @@ func main() {
         target := "http://auth-service:3001" + newPath
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        // --- PATCH: custom proxy logic with error handling ---
-        req := c.Request()
-        resp, err := proxy.Forward(req, target)
+        // --- PATCH: HTTP client proxy robusto ---
+        reqBody := c.Body()
+        req, err := http.NewRequest(c.Method(), target, strings.NewReader(string(reqBody)))
         if err != nil {
-            log.Printf("[ERROR_500] AUTH_PROXY forward error: %v", err)
+            log.Printf("[ERROR_500] AUTH_PROXY NewRequest error: %v", err)
             return c.Status(502).SendString("Gateway error: " + err.Error())
         }
-        // Log response status and body
-        log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode(), string(resp.Body()))
-        c.Response().SetStatusCode(resp.StatusCode())
-        c.Response().SetBodyRaw(resp.Body())
-        for k, v := range resp.Header.PeekAll() {
-            c.Response().Header.SetBytesKV([]byte(k), v)
+        // Copia headers
+        c.Request().Header.VisitAll(func(k, v []byte) {
+            req.Header.Set(string(k), string(v))
+        })
+        // Esegui richiesta
+        client := &http.Client{}
+        resp, err := client.Do(req)
+        if err != nil {
+            log.Printf("[ERROR_500] AUTH_PROXY client.Do error: %v", err)
+            return c.Status(502).SendString("Gateway error: " + err.Error())
+        }
+        defer resp.Body.Close()
+        respBody, _ := io.ReadAll(resp.Body)
+        log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode, string(respBody))
+        // Copia status e body
+        c.Status(resp.StatusCode)
+        c.Response().SetBodyRaw(respBody)
+        // Copia headers rilevanti
+        for k, vals := range resp.Header {
+            for _, v := range vals {
+                c.Set(k, v)
+            }
         }
         return nil
     })    // -------------------------------------------------------
