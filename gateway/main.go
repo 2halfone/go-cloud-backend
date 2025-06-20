@@ -394,14 +394,23 @@ func main() {
             newPath = "/"
         }
         target := "http://auth-service:3001" + newPath
-        
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        err := proxy.Do(c, target)
+        // --- PATCH: custom proxy logic with error handling ---
+        req := c.Request()
+        resp, err := proxy.Forward(req, target)
         if err != nil {
-            log.Printf("[ERROR_500] AUTH_PROXY error: %v [REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", err, c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
+            log.Printf("[ERROR_500] AUTH_PROXY forward error: %v", err)
+            return c.Status(502).SendString("Gateway error: " + err.Error())
         }
-        return err
+        // Log response status and body
+        log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode(), string(resp.Body()))
+        c.Response().SetStatusCode(resp.StatusCode())
+        c.Response().SetBodyRaw(resp.Body())
+        for k, v := range resp.Header.PeekAll() {
+            c.Response().Header.SetBytesKV([]byte(k), v)
+        }
+        return nil
     })    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
     // -------------------------------------------------------
