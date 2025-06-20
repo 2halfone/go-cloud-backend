@@ -193,10 +193,10 @@ type loginRequest struct {
 }
 
 func loginHandler(c *fiber.Ctx) error {
+    log.Printf("LOGIN_TRACE: INIZIO loginHandler")
     defer func() {
         if r := recover(); r != nil {
             log.Printf("LOGIN_PANIC: %v", r)
-            // Restituisci sempre una risposta JSON coerente
             _ = c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
                 "error":   "Errore interno del server (panic)",
                 "code":    "INTERNAL_PANIC",
@@ -205,6 +205,7 @@ func loginHandler(c *fiber.Ctx) error {
         }
     }()
 
+    log.Printf("LOGIN_TRACE: dopo defer recover, prima controllo DB")
     // Controllo robusto su database.DB
     if database.DB == nil {
         log.Printf("LOGIN_ERROR: database.DB is nil")
@@ -214,6 +215,7 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
+    log.Printf("LOGIN_TRACE: dopo controllo DB, prima BodyParser")
     var req loginRequest
     if err := c.BodyParser(&req); err != nil {
         log.Printf("LOGIN_ERROR: Invalid payload - %v", err)
@@ -223,19 +225,7 @@ func loginHandler(c *fiber.Ctx) error {
         })
     }
 
-    log.Printf("LOGIN_DEBUG: Received login request - email='%s', username='%s'", req.Email, req.Username)
-
-    var identifier string
-    if req.Username != "" {
-        identifier = req.Username
-    } else if req.Email != "" {
-        identifier = req.Email
-    } else {
-        return c.Status(400).JSON(fiber.Map{
-            "error": "Email o username richiesti",
-            "code":  "MISSING_IDENTIFIER",
-        })
-    }
+    log.Printf("LOGIN_TRACE: dopo BodyParser, req.Email='%s', req.Username='%s'", req.Email, req.Username)
 
     log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
     var user User
