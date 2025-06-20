@@ -27,20 +27,24 @@ func LogAuthAction(userEmail, action string) error {
 
 // LogAuthActionDetailed logs authentication with additional details
 func LogAuthActionDetailed(userEmail, username, action, ipAddress, userAgent string, success bool) (err error) {
+    log.Printf("[DEBUG] LogAuthActionDetailed called: userEmail=%s, username=%s, action=%s, ipAddress=%s, userAgent=%s, success=%v", userEmail, username, action, ipAddress, userAgent, success)
     defer func() {
         if r := recover(); r != nil {
-            log.Printf("PANIC in LogAuthActionDetailed: %v (userEmail=%s, action=%s)", r, userEmail, action)
+            log.Printf("[PANIC] in LogAuthActionDetailed: %v (userEmail=%s, action=%s, ipAddress=%s, userAgent=%s, success=%v)", r, userEmail, action, ipAddress, userAgent, success)
             err = fmt.Errorf("panic: %v", r)
         }
     }()
     if database.DB == nil {
-        log.Printf("LogAuthActionDetailed: database.DB is nil! userEmail=%s, action=%s", userEmail, action)
+        log.Printf("[ERROR] LogAuthActionDetailed: database.DB is nil! userEmail=%s, action=%s, ipAddress=%s, userAgent=%s, success=%v", userEmail, action, ipAddress, userAgent, success)
         return fmt.Errorf("database.DB is nil")
     }
     query := `INSERT INTO auth_logs (user_email, action, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, $5)`
+    log.Printf("[DEBUG] Executing query: %s | args: %s, %s, %s, %s, %v", query, userEmail, action, ipAddress, userAgent, success)
     _, err = database.DB.Exec(query, userEmail, action, ipAddress, userAgent, success)
     if err != nil {
-        log.Printf("LogAuthActionDetailed: DB Exec error: %v (userEmail=%s, action=%s)", err, userEmail, action)
+        log.Printf("[ERROR] LogAuthActionDetailed: DB Exec error: %v (userEmail=%s, action=%s, ipAddress=%s, userAgent=%s, success=%v)", err, userEmail, action, ipAddress, userAgent, success)
+    } else {
+        log.Printf("[DEBUG] LogAuthActionDetailed: insert successful (userEmail=%s, action=%s)", userEmail, action)
     }
     return err
 }
@@ -67,6 +71,7 @@ func GetAuthLogs() ([]AuthLog, error) {
         err := rows.Scan(&log.ID, &log.UserEmail, &log.Action, &log.Timestamp, 
                         &log.IPAddress, &log.UserAgent, &log.Success, &log.Username)
         if err != nil {
+            log.Printf("[ERROR] GetAuthLogs: row scan error: %v", err)
             continue
         }
         logs = append(logs, log)

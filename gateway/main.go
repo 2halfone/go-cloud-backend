@@ -306,7 +306,7 @@ func main() {
     app.Use(func(c *fiber.Ctx) error {
         defer func() {
             if r := recover(); r != nil {
-                log.Printf("🔥 PANIC RECOVERED: %v\n%s", r, debug.Stack())
+                log.Printf("[PANIC_HANDLER] PANIC RECOVERED: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
                 c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
             }
         }()
@@ -382,6 +382,12 @@ func main() {
 
     // Auth routes (no JWT required)
     app.All("/auth/*", func(c *fiber.Ctx) error {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("[PANIC_HANDLER] PANIC in /auth/*: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
+                c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
+            }
+        }()
         // Strip /auth prefix and forward to auth-service
         newPath := strings.TrimPrefix(c.OriginalURL(), "/auth")
         if newPath == "" {
@@ -391,7 +397,11 @@ func main() {
         
         c.Set("X-Gateway-Request", "gateway-v1.0")
         log.Printf("AUTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
-        return proxy.Do(c, target)
+        err := proxy.Do(c, target)
+        if err != nil {
+            log.Printf("[ERROR_500] AUTH_PROXY error: %v [REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", err, c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
+        }
+        return err
     })    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
     // -------------------------------------------------------
@@ -555,8 +565,15 @@ func main() {
 
     // General user routes (catch-all for other /user/* routes)
     app.All("/user/*", func(c *fiber.Ctx) error {
+        defer func() {
+            if r := recover(); r != nil {
+                log.Printf("[PANIC_HANDLER] PANIC in /user/*: %v\n%s\n[REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", r, debug.Stack(), c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
+                c.Status(500).SendString(fmt.Sprintf("Panic recovered: %v", r))
+            }
+        }()
         // Safety check for JWT validation
         if c.Locals("user") == nil {
+            log.Printf("[ERROR_500] /user/* unauthorized: JWT missing [REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
             return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
                 "error": "Token non valido o mancante",
                 "code":  "JWT_REQUIRED",
@@ -575,11 +592,13 @@ func main() {
                 target += "?" + strings.Split(c.OriginalURL(), "?")[1]
             }
         }
-        
         c.Set("X-Gateway-Request", "gateway-v1.0")
-        log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", 
-            c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
-        return proxy.Do(c, target)
+        log.Printf("USER_PROXY: %s %s -> %s [IP: %s, User: %s]", c.Method(), c.OriginalURL(), target, c.IP(), getUserID(c))
+        err := proxy.Do(c, target)
+        if err != nil {
+            log.Printf("[ERROR_500] USER_PROXY error: %v [REQUEST] Method=%s Path=%s IP=%s Body=%s Headers=%v", err, c.Method(), c.Path(), c.IP(), string(c.Body()), c.GetReqHeaders())
+        }
+        return err
     })
 
     // -------------------------------------------------------
