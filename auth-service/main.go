@@ -21,6 +21,7 @@ import (
     "golang.org/x/crypto/bcrypt"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
+    "github.com/gofiber/fiber/v2/middleware/recover"
     
     "go-cloud-backend/shared/metrics"
 )
@@ -573,7 +574,15 @@ func main() {
 
     // Connetti al database
     database.Connect()
-      app := fiber.New()
+    app := fiber.New()
+
+    // Middleware per loggare i panic con stacktrace
+    app.Use(recover.New(recover.Config{
+        EnableStackTrace: true,
+        StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
+            log.Printf("PANIC: %v", e)
+        },
+    }))
 
     // Add metrics middleware to track HTTP requests
     app.Use(metrics.HTTPMetricsMiddleware("auth-service"))
