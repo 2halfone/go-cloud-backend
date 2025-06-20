@@ -328,7 +328,6 @@ func main() {
         AllowCredentials: false,
     }))    // Security middleware
     app.Use(helmet.New())
-    app.Use(fiberrecover.New())
 
     // Rate limiting
     app.Use(limiter.New(limiter.Config{
@@ -435,16 +434,17 @@ func main() {
         log.Printf("TRACE: dopo io.ReadAll, body=%s", string(respBody))
         log.Printf("[AUTH_PROXY] Response from auth-service: status=%d, body=%s", resp.StatusCode, string(respBody))
         c.Status(resp.StatusCode)
-        log.Printf("TRACE: dopo c.Status(%d)", resp.StatusCode)
-        c.Response().SetBodyRaw(respBody)
-        log.Printf("TRACE: dopo SetBodyRaw")
+        // Copy headers from upstream BEFORE sending the body
         for k, vals := range resp.Header {
             for _, v := range vals {
                 c.Set(k, v)
             }
         }
+        log.Printf("TRACE: dopo copia headers da upstream")
+        // Send the response body and return
+        log.Printf("TRACE: prima di c.Send(respBody)")
         log.Printf("TRACE: fine handler /auth/*")
-        return nil
+        return c.Send(respBody)
     })    // -------------------------------------------------------
     // 2) JWT middleware for protected routes
     // -------------------------------------------------------
