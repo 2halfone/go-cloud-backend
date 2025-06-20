@@ -771,6 +771,20 @@ func main() {
         return proxy.Do(c, target)
     })
 
+    // Proxy per /api/dashboard/vm-health
+    app.All("/api/dashboard/vm-health", func(c *fiber.Ctx) error {
+        target := "http://dashboard-api:3003/api/dashboard/vm-health"
+        log.Printf("DASHBOARD_VM_HEALTH_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
+        return proxy.Do(c, target)
+    })
+
+    // Proxy per /api/dashboard/security
+    app.All("/api/dashboard/security", func(c *fiber.Ctx) error {
+        target := "http://dashboard-api:3003/api/dashboard/security"
+        log.Printf("DASHBOARD_SECURITY_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
+        return proxy.Do(c, target)
+    })
+
     // -------------------------------------------------------
     // Start server
     // -------------------------------------------------------
