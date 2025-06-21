@@ -21,7 +21,7 @@ import (
     "github.com/skip2/go-qrcode"
     _ "github.com/lib/pq"
     
-    // TODO: Re-enable once Prometheus issues are resolved
+    //. TODO: Re-enable once Prometheus issues are resolved
     // "go-cloud-backend/shared/metrics"
 )
 
