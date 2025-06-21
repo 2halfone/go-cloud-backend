@@ -5,6 +5,7 @@ WORKDIR /app
 
 COPY shared/ ./shared/
 COPY auth-service/ ./
+COPY ../shared ../shared
 
 # Tidy and download dependencies (go.sum will be generated)
 RUN go mod tidy

@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Copy shared module
 COPY shared/ ./shared/
+COPY ../../shared ../../shared
 
 # Copy prometheus-service files
 COPY monitoring/prometheus-service/ ./

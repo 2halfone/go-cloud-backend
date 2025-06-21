@@ -8,6 +8,7 @@ COPY shared/ ./shared/
 
 # Copy user-service files
 COPY user-service/ ./
+COPY ../shared ../shared
 
 # Tidy and download dependencies (go.sum will be generated)
 RUN go mod tidy
