@@ -67,14 +67,14 @@ func GetAuthLogs() ([]AuthLog, error) {
     
     var logs []AuthLog
     for rows.Next() {
-        var log AuthLog
-        err := rows.Scan(&log.ID, &log.UserEmail, &log.Action, &log.Timestamp, 
-                        &log.IPAddress, &log.UserAgent, &log.Success, &log.Username)
+        var logEntry AuthLog
+        err := rows.Scan(&logEntry.ID, &logEntry.UserEmail, &logEntry.Action, &logEntry.Timestamp, 
+                        &logEntry.IPAddress, &logEntry.UserAgent, &logEntry.Success, &logEntry.Username)
         if err != nil {
             log.Printf("[ERROR] GetAuthLogs: row scan error: %v", err)
             continue
         }
-        logs = append(logs, log)
+        logs = append(logs, logEntry)
     }
     return logs, nil
 }
