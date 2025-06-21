@@ -1,10 +1,10 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
-COPY go.mod go.sum ./
+COPY monitoring/dashboard-api/go.mod monitoring/dashboard-api/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY monitoring/dashboard-api/. .
 COPY ./shared ./shared
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
