@@ -3,7 +3,7 @@ version: '3.8'
 services:
   gateway:
     build:
-      context: ..
+      context: .
       dockerfile: ./gateway/Dockerfile
     ports:
       - "3000:3000"
@@ -35,7 +35,7 @@ services:
       - microservices-net  # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
-      context: ..
+      context: .
       dockerfile: ./auth-service/Dockerfile
     ports:
       - "3001:3001"  # SOLO per WebSocket real-time events (frontend Flutter)
@@ -68,7 +68,7 @@ services:
       - microservices-net  # --- User Service (aggiornato con database) ---
   user-service:
     build:
-      context: ..
+      context: .
       dockerfile: ./user-service/Dockerfile
     # ports: - "3002:3002"  # RIMOSSO - Solo rete Docker interna
     environment:
@@ -105,7 +105,7 @@ services:
     restart: unless-stopped  # --- Prometheus Monitoring Service ---
   prometheus-service:
     build:
-      context: ..
+      context: .
       dockerfile: ./monitoring/prometheus-service/Dockerfile
     # ports: - "9090:9090"  # RIMOSSO - Solo rete Docker interna per sicurezza
     depends_on:
@@ -116,7 +116,7 @@ services:
   # --- Dashboard API Service ---
   dashboard-api:
     build:
-      context: ..
+      context: .
       dockerfile: ./monitoring/dashboard-api/Dockerfile
     # ports: - "3003:3003"  # RIMOSSO - Solo rete Docker interna
     environment:
