@@ -54,7 +54,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # --- Database per i dati degli utenti ---0
+  # --- Database per i dati degli utenti ---
   user-db:
     image: postgres:15-alpine
     restart: always
