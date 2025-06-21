@@ -13,8 +13,8 @@ services:
       - auth-service
       - user-service
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -23,7 +23,7 @@ services:
 
   # --- Database per i log di autenticazione ---
   auth-db:
-    image: postgres:15-alpine
+    image: postgres:15-alpine  
     restart: always
     environment:
       POSTGRES_USER: auth_admin
@@ -46,8 +46,8 @@ services:
     depends_on:
       - auth-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
@@ -56,12 +56,12 @@ services:
 
   # --- Database per i dati degli utenti ---
   user-db:
-    image: postgres:15-alpine
+    image: postgres:15-alpine  
     restart: always
     environment:
       POSTGRES_USER: user_admin
       POSTGRES_PASSWORD: user_password
-      POSTGRES_DB: users_db
+      POSTGRES_DB: users_db    
     volumes:
       - user_db_data:/var/lib/postgresql/data
     networks:
@@ -81,13 +81,13 @@ services:
       - user-db
       - auth-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
-      retries: 3  # --- Node Exporter for System Metrics ---
+      retries: 3  # --- Node Exporter for System Metrics ---  
   node-exporter:
     image: prom/node-exporter:latest
     # ports: - "9100:9100"  # RIMOSSO - Solo rete Docker interna per sicurezza
@@ -97,27 +97,35 @@ services:
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
+      - /proc:/host/proc:ro    
+      - /sys:/host/sys:ro      
       - /:/rootfs:ro
     networks:
-      - microservices-net
+      - microservices-net      
     restart: unless-stopped  # --- Prometheus Monitoring Service ---
   prometheus-service:
-    build:
-      context: .
-      dockerfile: ./monitoring/prometheus-service/Dockerfile
+    image: prom/prometheus:latest
     # ports: - "9090:9090"  # RIMOSSO - Solo rete Docker interna per sicurezza
+    volumes:
+      - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'        
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'    
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.listen-address=0.0.0.0:9090'
     depends_on:
       - node-exporter
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
   # --- Dashboard API Service ---
   dashboard-api:
     build:
-      context: .
-      dockerfile: ./monitoring/dashboard-api/Dockerfile
+      context: ./monitoring/dashboard-api
+      dockerfile: Dockerfile   
     # ports: - "3003:3003"  # RIMOSSO - Solo rete Docker interna
     environment:
       # Database connections for metrics collection
@@ -125,12 +133,12 @@ services:
       USER_DATABASE_URL: postgres://user_admin:user_password@user-db:5432/users_db?sslmode=disable
       PROMETHEUS_URL: http://prometheus-service:9090
     depends_on:
-      - prometheus-service
+      - prometheus-service     
       - auth-db
       - user-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
       interval: 30s
@@ -149,18 +157,6 @@ services:
   #   networks:
   #     - microservices-net
   #   restart: unless-stopped
-  # Portainer - Interfaccia di gestione Docker
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - microservices-net
 
 networks:
   microservices-net:
@@ -170,6 +166,4 @@ volumes:
   auth_db_data:
     driver: local
   user_db_data:
-    driver: local
-  portainer_data:
     driver: local
