@@ -35,7 +35,7 @@ services:
       - microservices-net  # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
-      context: .
+      context: ..
       dockerfile: ./auth-service/Dockerfile
     ports:
       - "3001:3001"  # SOLO per WebSocket real-time events (frontend Flutter)
