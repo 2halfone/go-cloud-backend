@@ -124,8 +124,8 @@ services:
   # --- Dashboard API Service ---
   dashboard-api:
     build:
-      context: ./monitoring/dashboard-api
-      dockerfile: Dockerfile   
+      context: .
+      dockerfile: monitoring/dashboard-api/Dockerfile
     # ports: - "3003:3003"  # RIMOSSO - Solo rete Docker interna
     environment:
       # Database connections for metrics collection
