@@ -25,7 +25,7 @@ import (
     "go-cloud-backend/shared/metrics"
 )
 
-// JWT secret - loaded from environment variable JWT_SECRET
+//. JWT secret - loaded from environment variable JWT_SECRET
 var jwtSecret []byte
 
 // Helper function to determine target service from path
