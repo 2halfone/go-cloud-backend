@@ -21,7 +21,7 @@ import (
     "golang.org/x/crypto/bcrypt"
     "github.com/prometheus/client_golang/prometheus/promhttp"
     "github.com/valyala/fasthttp/fasthttpadaptor"
-    "github.com/gofiber/fiber/v2/middleware/recover"
+    recovermw "github.com/gofiber/fiber/v2/middleware/recover"
     
     "go-cloud-backend/shared/metrics"
 )
@@ -602,7 +602,7 @@ func main() {
     app := fiber.New()
 
     // PRIMO middleware: recover di Fiber
-    app.Use(recover.New(recover.Config{
+    app.Use(recovermw.New(recovermw.Config{
         EnableStackTrace: true,
         StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
             log.Printf("PANIC: %v", e)
