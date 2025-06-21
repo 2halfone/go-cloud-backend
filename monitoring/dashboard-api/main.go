@@ -25,7 +25,7 @@ package main
 // @tag.name VM Health
 // @tag.description Virtual machine and system resource monitoring
 
-// @tag.name Analytics
+///@tag.name Analytics
 // @tag.description QR code analytics and insights
 
 import (
