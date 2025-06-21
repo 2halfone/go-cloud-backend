@@ -4,7 +4,7 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /app
 
 # Copy shared module
-COPY shared/ ./shared/
+COPY ./shared ./shared
 
 # Copy user-service files
 COPY user-service/ ./

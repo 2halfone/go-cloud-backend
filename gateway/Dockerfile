@@ -8,7 +8,7 @@ COPY shared/ ./shared/
 
 # Copy gateway files
 COPY gateway/ ./
-COPY ../shared ../shared
+COPY ./shared ./shared
 
 # 7Tidy and download dependencies (go.sum will be generated)
 RUN go mod tidy

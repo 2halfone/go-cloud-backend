@@ -2,7 +2,7 @@ module prometheus-service
 
 go 1.21
 
-replace go-cloud-backend/shared => ../../shared
+replace go-cloud-backend/shared => ./shared
 
 require (
 	github.com/gofiber/fiber/v2 v2.52.0
