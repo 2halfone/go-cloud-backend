@@ -116,8 +116,8 @@ services:
   # --- Dashboard API Service ---
   dashboard-api:
     build:
-      context: ./monitoring/dashboard-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./monitoring/dashboard-api/Dockerfile
     # ports: - "3003:3003"  # RIMOSSO - Solo rete Docker interna
     environment:
       # Database connections for metrics collection
@@ -150,17 +150,17 @@ services:
   #     - microservices-net
   #   restart: unless-stopped
   # Portainer - Interfaccia di gestione Docker
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - microservices-net
+  # portainer:
+  #   image: portainer/portainer-ce:latest
+  #   container_name: portainer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9000:9000"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - portainer_data:/data
+  #   networks:
+  #     - microservices-net
 
 networks:
   microservices-net:
