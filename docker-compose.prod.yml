@@ -136,9 +136,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-<<<<<<< HEAD
-  # --- Portainer ---
-=======
   # NGINX - INATTIVO per ora, decommentare quando necessario
   # nginx:
   #   image: nginx:alpine
@@ -153,7 +150,6 @@ services:
   #     - microservices-net
   #   restart: unless-stopped
   # Portainer - Interfaccia di gestione Docker
->>>>>>> temp-update
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
