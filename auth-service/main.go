@@ -227,6 +227,19 @@ func loginHandler(c *fiber.Ctx) error {
 
     log.Printf("LOGIN_TRACE: dopo BodyParser, req.Email='%s', req.Username='%s'", req.Email, req.Username)
 
+    // Determina l'identificatore (email o username)
+    identifier := ""
+    if req.Email != "" {
+        identifier = req.Email
+    } else if req.Username != "" {
+        identifier = req.Username
+    } else {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "error": "Email o username richiesti",
+            "code":  "MISSING_IDENTIFIER",
+        })
+    }
+
     log.Printf("LOGIN_ATTEMPT: identifier='%s'", identifier)
     var user User
     selectQuery := `SELECT id, email, username, name, surname, password, role, created_at FROM users WHERE email = $1 OR username = $1`
