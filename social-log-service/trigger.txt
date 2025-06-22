@@ -1,2 +1,0 @@
-# Trigger file for workflow test
-# Safe to delete.
