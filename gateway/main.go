@@ -44,7 +44,7 @@ func getTargetService(path string) string {
     return "gateway"
 }
 
-// .LogEntry rappresenta una voce di log strutturata
+// .LogEntry rappresentaa una voce di log strutturata
 type LogEntry struct {
     Timestamp    string            `json:"timestamp"`
     Method       string            `json:"method"`
