@@ -25,6 +25,7 @@ jobs:
       docker-changed: ${{ steps.changes.outputs.docker }}
       config-changed: ${{ steps.changes.outputs.config }}
       shared-changed: ${{ steps.changes.outputs.shared }}
+      social-log-changed: ${{ steps.changes.outputs.sociallog }}
       # Force rebuild quando shared cambia
       force-rebuild: ${{ steps.changes.outputs.shared }}
     steps:
@@ -44,6 +45,9 @@ jobs:
               - 'shared/**'
             monitoring:
               - 'monitoring/**'
+            sociallog:
+              - 'social-log-service/**'
+              - 'shared/**'
             docker:
               - 'docker-compose.prod.yml'
               - 'nginx/**'
@@ -243,7 +247,37 @@ jobs:
             docker ps --filter "name=prometheus-service"
             
             echo "✅ Monitoring deployed successfully!"
-
+  deploy-social-log-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.social-log-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔧 Deploy Social Log Service Only
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 60m
+          script: |
+            cd /home/frazerfrax1/go-cloud-backend
+            git pull origin main
+            echo "🧹 Cleaning up obsolete containers..."
+            docker container prune -f
+            docker image prune -f
+            echo "🔥 Force cleaning build cache..."
+            docker builder prune -f --all
+            docker system prune -f --all --volumes
+            echo "🔨 Building social-log-service..."
+            docker-compose -f docker-compose.prod.yml build --no-cache social-log-service
+            echo "🛑 Stopping old social-log-service container..."
+            docker-compose -f docker-compose.prod.yml stop social-log-service || true
+            docker-compose -f docker-compose.prod.yml rm -f social-log-service || true
+            echo "🚀 Starting new social-log-service container..."
+            docker-compose -f docker-compose.prod.yml up -d --no-deps social-log-service
+            echo "📊 Container status:"
+            docker ps --filter "name=social-log-service"
+            echo "✅ Social Log Service deployed successfully!"
   config-update:
     needs: detect-changes
     if: needs.detect-changes.outputs.config-changed == 'true'

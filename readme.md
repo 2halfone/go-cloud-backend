@@ -240,4 +240,48 @@ Service      Service      Collection
 │ 🌐 API: RESTful + JSON                 │
 └─────────────────────────────────────────┘
 
-Sistema completamente containerizzato, scalabile e monitorato! 🚀
+Sistema completamente containerizzato, scalabile e monitorato! 🚀go-cloud-backend/
+├── .dockerignore
+├── .env
+├── .gitignore
+├── Makefile
+├── docker-compose.prod.yml
+├── fix_metrics.sh
+├── readme.md
+├── .github/
+│   └── workflows/
+├── auth-service/
+│   ├── Dockerfile
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── database/
+│   ├── migrations/
+│   └── models/
+├── documentation/
+│   ├── API ADMIN - AUTH LOGS
+│   ├── api prometheus
+│   ├── API_Changes_Before_After.md
+│   ├── Auth API.md
+│   ├── Auth Service Database Documentation.md
+│   ├── Dashboard API Backend Documentation.md
+│   ├── Dashboard API Frontend Integration Guide.md
+│   └── ...
+├── frontend/
+│   └── index.html
+├── gateway/
+│   └── main.go
+├── monitoring/
+│   ├── prometheus-service/
+│   └── dashboard-api/
+├── nginx/
+├── shared/
+├── systemd/
+└── user-service/
+    ├── main.go
+    ├── database/
+    ├── migrations/
+    ├── models/
+    ├── handlers/
+    ├── services/
+    └── utils/
