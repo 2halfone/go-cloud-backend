@@ -13,8 +13,8 @@ services:
       - auth-service
       - user-service
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -32,7 +32,7 @@ services:
     volumes:
       - auth_db_data:/var/lib/postgresql/data
     networks:
-      - microservices-net
+      - microservices-net  # --- Auth Service (aggiornato con database) ---
   auth-service:
     build:
       context: .
@@ -46,8 +46,8 @@ services:
     depends_on:
       - auth-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
@@ -65,7 +65,7 @@ services:
     volumes:
       - user_db_data:/var/lib/postgresql/data
     networks:
-      - microservices-net
+      - microservices-net  # --- User Service (aggiornato con database) ---
   user-service:
     build:
       context: .
@@ -81,14 +81,13 @@ services:
       - user-db
       - auth-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-  # --- Node Exporter for System Metrics ---  
+      retries: 3  # --- Node Exporter for System Metrics ---  
   node-exporter:
     image: prom/node-exporter:latest
     # ports: - "9100:9100"  # RIMOSSO - Solo rete Docker interna per sicurezza
@@ -102,9 +101,8 @@ services:
       - /sys:/host/sys:ro      
       - /:/rootfs:ro
     networks:
-      - microservices-net
-    restart: unless-stopped
-  # --- Prometheus Monitoring Service ---
+      - microservices-net      
+    restart: unless-stopped  # --- Prometheus Monitoring Service ---
   prometheus-service:
     image: prom/prometheus:latest
     # ports: - "9090:9090"  # RIMOSSO - Solo rete Docker interna per sicurezza
@@ -121,8 +119,8 @@ services:
     depends_on:
       - node-exporter
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
   # --- Dashboard API Service ---
   dashboard-api:
     build:
@@ -139,8 +137,8 @@ services:
       - auth-db
       - user-db
     networks:
-      - microservices-net
-    restart: unless-stopped
+      - microservices-net      
+    restart: unless-stopped    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
       interval: 30s
@@ -161,8 +159,8 @@ services:
 
   social-log-service:
     build:
-      context: .
-      dockerfile: ./social-log-service/Dockerfile
+      context: ./social-log-service
+      dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://social_admin:social_password@social-log-db:5432/social_logs_db?sslmode=disable
     depends_on:
