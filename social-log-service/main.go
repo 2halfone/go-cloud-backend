@@ -52,6 +52,8 @@ func main() {
 	log.Fatal(app.Listen(":8080"))
 }
 
+// Trigger test: aggiunto commento per forzare workflow
+
 type SocialLog struct {
 	Social   string    `json:"social"`
 	Timestamp time.Time `json:"timestamp"`
