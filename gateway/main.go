@@ -785,6 +785,13 @@ func main() {
         return proxy.Do(c, target)
     })
 
+    // Proxy for /api/social/log to social-log-service
+    app.All("/api/social/log", func(c *fiber.Ctx) error {
+        target := "http://social-log-service:8080/api/social/log"
+        log.Printf("SOCIAL_LOG_PROXY: %s %s -> %s [IP: %s]", c.Method(), c.OriginalURL(), target, c.IP())
+        return proxy.Do(c, target)
+    })
+
     // -------------------------------------------------------
     // Start server
     // -------------------------------------------------------
