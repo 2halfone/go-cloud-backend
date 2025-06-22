@@ -249,7 +249,7 @@ jobs:
             echo "✅ Monitoring deployed successfully!"
   deploy-social-log-service:
     needs: detect-changes
-    if: needs.detect-changes.outputs.social-log-changed == 'true'
+    if: needs.detect-changes.outputs.sociallog == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: 🔧 Deploy Social Log Service Only
