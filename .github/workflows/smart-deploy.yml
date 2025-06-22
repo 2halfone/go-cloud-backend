@@ -249,10 +249,10 @@ jobs:
             echo "✅ Monitoring deployed successfully!"
   deploy-social-log-service:
     needs: detect-changes
-    if: needs.detect-changes.outputs.sociallog == 'true'
+    if: needs.detect-changes.outputs.social-log-changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: 🔧 Deploy Social Log Service Only
+      - name: "🔧 Deploy Social Log Service Only"
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
