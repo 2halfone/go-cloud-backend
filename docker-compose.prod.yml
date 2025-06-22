@@ -161,8 +161,8 @@ services:
 
   social-log-service:
     build:
-      context: ./social-log-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./social-log-service/Dockerfile
     environment:
       DATABASE_URL: postgres://social_admin:social_password@social-log-db:5432/social_logs_db?sslmode=disable
     depends_on:
