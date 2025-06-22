@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/lib/pq"
 
 	"go-cloud-backend/shared/metrics"
@@ -32,7 +31,7 @@ func main() {
 			metrics.RecordSystemError("body_parse", "social-log-service")
 			return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
 		}
-		if logReq.Social == "" || logReq.Content == "" || logReq.Status == "" || logReq.Timestamp == "" {
+		if logReq.Social == "" || logReq.Content == "" || logReq.Status == "" || logReq.Timestamp.IsZero() {
 			metrics.RecordSystemError("missing_fields", "social-log-service")
 			return c.Status(400).JSON(fiber.Map{"error": "Missing fields"})
 		}
@@ -44,10 +43,11 @@ func main() {
 		return c.SendStatus(201)
 	})
 
-	app.Get("/metrics", func(c *fiber.Ctx) error {
-		promhttp.Handler().ServeHTTP(c.Context().Response.BodyWriter(), c.Context().Request)
-		return nil
-	})
+	// app.Get("/metrics", func(c *fiber.Ctx) error {
+	// 	promhttp.Handler().ServeHTTP(c.Context().Response.BodyWriter(), c.Context().Request)
+	// 	return nil
+	// })
+	// TODO: usare una libreria compatibile Fiber per Prometheus
 
 	log.Fatal(app.Listen(":8080"))
 }
