@@ -1,6 +1,6 @@
 package main
 
-// SECRET FIX TEST: Testing corrected SSH secret names in workflow
+// SECRET FIX TESTt: Testing corrected SSH secret names in workflow
 // This change should trigger only auth-service deployment with proper secrets
 
 import (
