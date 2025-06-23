@@ -5,7 +5,6 @@
 -- 1. Clean up any remaining problematic functions and triggers
 -- ============================================================================
 
--- Remove any existing triggers that might conflict with backend logic
 DO $$
 DECLARE 
     table_record RECORD;
@@ -23,13 +22,13 @@ BEGIN
         
         RAISE NOTICE 'Cleaned triggers from table: %', table_record.tablename;
     END LOOP;
-END $$;
+END
+$$;
 
 -- ============================================================================
 -- 2. Create final table setup function for automatic QR system
 -- ============================================================================
 
--- Function to create new attendance table with correct structure for automatic system
 CREATE OR REPLACE FUNCTION create_attendance_table_automatic(table_name TEXT)
 RETURNS VOID AS $$
 BEGIN
@@ -60,7 +59,6 @@ $$ LANGUAGE plpgsql;
 -- 3. Function to populate new event table with all users
 -- ============================================================================
 
--- Function to populate event table with all authenticated users (for automatic system)
 CREATE OR REPLACE FUNCTION populate_automatic_event_users(event_table_name TEXT)
 RETURNS INTEGER AS $$
 DECLARE
@@ -93,7 +91,6 @@ $$ LANGUAGE plpgsql;
 -- 4. Master function for complete automatic event setup
 -- ============================================================================
 
--- Complete setup function for new automatic QR attendance events
 CREATE OR REPLACE FUNCTION setup_automatic_attendance_event(event_table_name TEXT)
 RETURNS TEXT AS $$
 DECLARE
@@ -121,7 +118,6 @@ $$ LANGUAGE plpgsql;
 -- 5. Function to update event statistics (for admin monitoring)
 -- ============================================================================
 
--- Function to update attendance_events table with current statistics
 CREATE OR REPLACE FUNCTION update_event_statistics(event_table_name TEXT, event_id INTEGER)
 RETURNS VOID AS $$
 DECLARE
@@ -152,7 +148,6 @@ $$ LANGUAGE plpgsql;
 -- 6. Function for QR scan success/error tracking
 -- ============================================================================
 
--- Function to track QR scan results for admin monitoring
 CREATE OR REPLACE FUNCTION track_qr_scan_result(event_id INTEGER, scan_success BOOLEAN, error_message TEXT DEFAULT NULL)
 RETURNS VOID AS $$
 BEGIN
@@ -186,7 +181,6 @@ $$ LANGUAGE plpgsql;
 -- 7. Clean up obsolete functions from previous migrations
 -- ============================================================================
 
--- Remove functions that are no longer needed or conflict with automatic system
 DROP FUNCTION IF EXISTS auto_set_present_on_scan() CASCADE;
 DROP FUNCTION IF EXISTS update_status_on_scan() CASCADE;
 DROP FUNCTION IF EXISTS create_attendance_trigger(TEXT) CASCADE;
@@ -198,7 +192,6 @@ DROP FUNCTION IF EXISTS add_attendance_performance_indexes(TEXT) CASCADE;
 -- 8. Update existing tables to conform to automatic system
 -- ============================================================================
 
--- Ensure all existing attendance tables have the correct constraints
 DO $$
 DECLARE 
     table_record RECORD;
@@ -219,13 +212,13 @@ BEGIN
         
         RAISE NOTICE 'Updated constraints for automatic system: %', table_record.tablename;
     END LOOP;
-END $$;
+END
+$$;
 
 -- ============================================================================
 -- 9. Create admin monitoring view for the clean automatic system
 -- ============================================================================
 
--- Create comprehensive view for admin monitoring of automatic QR system
 CREATE OR REPLACE VIEW automatic_qr_admin_monitoring AS
 SELECT 
     ae.id as event_id,
