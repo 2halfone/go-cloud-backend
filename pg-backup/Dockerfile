@@ -8,4 +8,4 @@ COPY crontab.txt /etc/crontabs/root
 
 RUN chmod +x /backup.sh && chmod 600 /root/.pgpass
 
-CMD ["crond", "-f", "-d", "8"]
+CMD ["crond", "-f"]
