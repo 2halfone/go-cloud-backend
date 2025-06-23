@@ -29,3 +29,7 @@ scripts/
 documentation/
 frontend/
 script/
+
+# Custom scripts and build files
+fix_metrics.sh
+Makefile
