@@ -1,0 +1,45 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Go Cloud Backend - Security Overview",
+    "panels": [
+      {
+        "type": "stat",
+        "title": "Login falliti (24h)",
+        "targets": [
+          {
+            "expr": "increase(auth_attempts_total{status=\"failed\"}[24h])",
+            "format": "time_series"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 }
+      },
+      {
+        "type": "stat",
+        "title": "Login riusciti (24h)",
+        "targets": [
+          {
+            "expr": "increase(auth_attempts_total{status=\"success\"}[24h])",
+            "format": "time_series"
+          }
+        ],
+        "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 }
+      },
+      {
+        "type": "stat",
+        "title": "Blocchi rate limiter (24h)",
+        "targets": [
+          {
+            "expr": "increase(gateway_rate_limit_blocked_total[24h])",
+            "format": "time_series"
+          }
+        ],
+        "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 }
+      }
+    ],
+    "schemaVersion": 30,
+    "version": 1,
+    "refresh": "10s"
+  },
+  "overwrite": true
+}
