@@ -1,8 +1,9 @@
-Schema. dell'Applicazione Go Cloud Backend.
+Go Cloud Backend Application Schema
 
-graph TB.
-    %% Client Layer.
-    Client[🌐 Client/Browser<br/>Frontend App].
+```mermaid
+graph TB
+    %% Client Layer
+    Client[🌐 Client/Browser<br/>Frontend App]
     
     %% Load Balancer/Proxy Layer
     Internet((🌍 Internet<br/>Port 80/443))
@@ -27,7 +28,7 @@ graph TB.
     
     %% Monitoring Layer
     Prometheus[📊 Prometheus<br/>Port 9090<br/>• Metrics Collection<br/>• System Monitoring<br/>• Performance Analytics]
-    
+    Grafana[📈 Grafana<br/>Port 3004<br/>• Dashboards<br/>• Analytics]
     Portainer[🐳 Portainer<br/>Container Management<br/>• Docker Monitoring<br/>• Container Control]
     
     %% Network Layer
@@ -52,6 +53,7 @@ graph TB.
     AuthService -.-> Prometheus
     UserService -.-> Prometheus
     SocialLogService -.-> Prometheus
+    Prometheus --> Grafana
     
     %% Docker Network
     Gateway --- DockerNet
@@ -62,6 +64,7 @@ graph TB.
     UserDB --- DockerNet
     SocialLogDB --- DockerNet
     Prometheus --- DockerNet
+    Grafana --- DockerNet
     
     %% Management
     Portainer -.-> DockerNet
@@ -76,123 +79,135 @@ graph TB.
     class AuthDB,UserDB,SocialLogDB database
     class AuthService,UserService,Gateway,SocialLogService service
     class Nginx,Internet proxy
-    class Prometheus,Portainer monitoring
+    class Prometheus,Grafana,Portainer monitoring
     class DockerNet network
+```
 
 
-    🔧 Architettura Dettagliata:
+🔧 Detailed Architecture:
+
 🌐 Frontend Layer
-Client: Browser/Mobile App che interagisce con l'API
+Client: Browser/Mobile App interacting with the API
+
 🔒 Proxy Layer
 Nginx: Reverse proxy, SSL termination, load balancing
 Ports: 80 (HTTP) → 443 (HTTPS)
+
 🚪 API Gateway Layer
-Gateway Service: Punto di ingresso unico
+Gateway Service: Single entry point
 Features: JWT auth, rate limiting, CORS, routing
 Port: 3000
+
 🎯 Microservices Layer
 Auth Service (Port 3001):
+- User registration/login
+- JWT token management
+- Password security
 
-User registration/login
-JWT token management
-Password security
 User Service (Port 3002):
+- User profile management
+- QR code generation
+- Attendance tracking
+- CRUD operations
 
-User profile management
-QR code generation
-Attendance tracking
-CRUD operations
 Social Log Service (Port 3003):
+- Social event logging
+- Audit trail
+- Social activity monitoring
 
-Logging di eventi sociali
-Audit trail
-Monitoraggio attività sociali
 🗄️ Database Layer
 Auth DB: User credentials, sessions
 User DB: Profiles, QR codes, attendance data
-Social Log DB: Logs e eventi audit
-Cross-connection: User Service può leggere Auth DB per sync
+Social Log DB: Logs and audit events
+Cross-connection: User Service can read Auth DB for sync
+
 📊 Monitoring Layer
-Prometheus: Metrics e monitoring
+Prometheus: Metrics and monitoring
+Grafana: Dashboards and analytics (port 3004)
 Portainer: Container management via web UI
+
 🌐 Network Layer
-Docker Network: Comunicazione interna sicura tra servizi
-Service Discovery: Automatic DNS resolution tra container
-🚀 Flusso delle Richieste:
+Docker Network: Secure internal communication between services
+Service Discovery: Automatic DNS resolution between containers
+
+🚀 Request Flow:
 Client → Internet → Nginx → Gateway
-Gateway verifica JWT e route la richiesta
+Gateway verifies JWT and routes the request
 Gateway → Auth/User/Social Log Service (based on route)
-Services → Database per data persistence
-Response torna indietro attraverso lo stesso path
-Prometheus monitora tutto il flusso
-Sistema scalabile, sicuro e monitorato! 🎉
+Services → Database for data persistence
+Response returns through the same path
+Prometheus monitors the entire flow
+System is scalable, secure, and monitored! 🎉
 
- Schema Visivo Go Cloud Backend
-                                🌍 INTERNET
-                                     |
-                            ┌────────▼────────┐
-                            │   🔒 NGINX      │
-                            │ Reverse Proxy   │
-                            │   Port 80/443   │
-                            └────────┬────────┘
-                                     |
-                            ┌────────▼────────┐
-                            │   🚪 GATEWAY    │
-                            │  API Gateway    │
-                            │   Port 3000     │
-                            │ • JWT Auth      │
-                            │ • Rate Limit    │
-                            │ • CORS          │
-                            └────────┬────────┘
-                                     |
-                ┌────────────┬────────────┬────────────┐
-                │            │            │            │
-       ┌────────▼────────┐   │   ┌────────▼────────┐   │   ┌────────▼────────┐
-       │  🔐 AUTH        │   │   │  👥 USER        │   │   │  📜 SOCIAL LOG  │
-       │   SERVICE       │   │   │   SERVICE       │   │   │   SERVICE       │
-       │  Port 3001      │   │   │  Port 3002      │   │   │  Port 3003      │
-       │ • Login/Register│   │   │ • Profile Mgmt  │   │   │ • Social Events │
-       │ • JWT Tokens    │   │   │ • QR Codes      │   │   │ • Audit Trail   │
-       │ • Passwords     │   │   │ • Attendance    │   │   │ • Activity Log  │
-       └────────┬────────┘   │   └────────┬────────┘   │   └────────┬────────┘
-                │            │            │            │            │
-                │            │            │            │            │
-       ┌────────▼────────┐   │   ┌────────▼────────┐   │   ┌────────▼────────┐
-       │  🗄️ AUTH DB     │   │   │  🗄️ USER DB     │   │   │  🗄️ SOCIAL LOG DB│
-       │   PostgreSQL    │   │   │   PostgreSQL    │   │   │   PostgreSQL    │
-       │   Port 5432     │   │   │   Port 5432     │   │   │   Port 5433     │
-       │ • Users         │   │   │ • Profiles      │   │   │ • Social Logs   │
-       │ • Credentials   │◄──┘   │ • QR Data       │   │   │ • Audit Events  │
-       │ • Sessions      │       │ • Attendance    │   │   │                │
-       └─────────────────┘       └─────────────────┘       └─────────────────┘
-                        
-                        🌐 DOCKER NETWORK
-                      ┌─────────────────────┐
-                      │  microservices-net  │
-                      │  Internal Comms     │
-                      └─────────────────────┘
+Go Cloud Backend Visual Schema
 
-                     📊 MONITORING LAYER
-              ┌─────────────────┬─────────────────┐
-              │                 │                 │
-     ┌────────▼────────┐       │       ┌────────▼────────┐
-     │ 📊 PROMETHEUS   │       │       │ 🐳 PORTAINER    │
-     │   Monitoring    │       │       │   Container     │
-     │   Port 9090     │       │       │   Management    │
-     │ • Metrics       │       │       │ • Docker UI     │
-     │ • Analytics     │       │       │ • Logs View     │
-     └─────────────────┘       │       └─────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │    ☁️ GOOGLE        │
-                    │   CLOUD COMPUTE     │
-                    │      ENGINE         │
-                    │  VM: 34.140.122.146 │
-                    │   Ubuntu 22.04      │
-                    └─────────────────────┘
+```
+                               🌍 INTERNET
+                                    |
+                           ┌────────▼────────┐
+                           │   🔒 NGINX      │
+                           │ Reverse Proxy   │
+                           │   Port 80/443   │
+                           └────────┬────────┘
+                                    |
+                           ┌────────▼────────┐
+                           │   🚪 GATEWAY    │
+                           │  API Gateway    │
+                           │   Port 3000     │
+                           │ • JWT Auth      │
+                           │ • Rate Limit    │
+                           │ • CORS          │
+                           └────────┬────────┘
+                                    |
+               ┌────────────┬────────────┬────────────┐
+               │            │            │            │
+      ┌────────▼────────┐   │   ┌────────▼────────┐   │   ┌────────▼────────┐
+      │  🔐 AUTH        │   │   │  👥 USER        │   │   │  📜 SOCIAL LOG  │
+      │   SERVICE       │   │   │   SERVICE       │   │   │   SERVICE       │
+      │  Port 3001      │   │   │  Port 3002      │   │   │  Port 3003      │
+      │ • Login/Register│   │   │ • Profile Mgmt  │   │   │ • Social Events │
+      │ • JWT Tokens    │   │   │ • QR Codes      │   │   │ • Audit Trail   │
+      │ • Passwords     │   │   │ • Attendance    │   │   │ • Activity Log  │
+      └────────┬────────┘   │   └────────┬────────┘   │   └────────┬────────┘
+               │            │            │            │            │
+               │            │            │            │            │
+      ┌────────▼────────┐   │   ┌────────▼────────┐   │   ┌────────▼────────┐
+      │  🗄️ AUTH DB     │   │   │  🗄️ USER DB     │   │   │  🗄️ SOCIAL LOG DB│
+      │   PostgreSQL    │   │   │   PostgreSQL    │   │   │   PostgreSQL    │
+      │   Port 5432     │   │   │   Port 5432     │   │   │   Port 5433     │
+      │ • Users         │   │   │ • Profiles      │   │   │ • Social Logs   │
+      │ • Credentials   │◄──┘   │ • QR Data       │   │   │ • Audit Events  │
+      │ • Sessions      │       │ • Attendance    │   │   │                │
+      └─────────────────┘       └─────────────────┘       └─────────────────┘
+                       
+                       🌐 DOCKER NETWORK
+                     ┌─────────────────────┐
+                     │  microservices-net  │
+                     │  Internal Comms     │
+                     └─────────────────────┘
+
+                    📊 MONITORING LAYER
+             ┌─────────────────┬─────────────────┬─────────────────┐
+             │                 │                 │                 │
+    ┌────────▼────────┐       │       ┌────────▼────────┐       │   ┌────────▼────────┐
+    │ 📊 PROMETHEUS   │       │       │ 🐳 PORTAINER    │       │   │ 📈 GRAFANA      │
+    │   Monitoring    │       │       │   Container     │       │   │   Dashboards    │
+    │   Port 9090     │       │       │   Management    │       │   │   Port 3004     │
+    │ • Metrics       │       │       │ • Docker UI     │       │   │ • Analytics     │
+    │ • Analytics     │       │       │ • Logs View     │       │   │ • Monitoring    │
+    └─────────────────┘       │       └─────────────────┘       │   └─────────────────┘
+                              │
+                   ┌──────────▼──────────┐
+                   │    ☁️ GOOGLE        │
+                   │   CLOUD COMPUTE     │
+                   │      ENGINE         │
+                   │  VM: 34.140.122.146 │
+                   │   Ubuntu 22.04      │
+                   └─────────────────────┘
+```
 
 
-                    🔄 Flusso delle Richieste:
+🔄 Request Flow:
 👤 Client
    │
    │ HTTPS Request
@@ -221,7 +236,7 @@ Service      Service      Service
 (5432)       (5432)       (5433)
 
 
-🎯 Porte e Servizi:
+🎯 Ports and Services:
 
 ┌─────────────────────────────────────────┐
 │              PORT MAPPING               │
@@ -229,7 +244,8 @@ Service      Service      Service
 │ 🌐 External (Internet) Access:         │
 │   • 80    → Nginx (HTTP)               │
 │   • 443   → Nginx (HTTPS)              │
-│   • 9090  → Prometheus (se aperto)     │
+│   • 9090  → Prometheus (if open)       │
+│   • 3004  → Grafana (Monitoring UI)    │
 ├─────────────────────────────────────────┤
 │ 🔒 Internal (Docker Network) Only:     │
 │   • 3000  → Gateway                    │
@@ -241,7 +257,7 @@ Service      Service      Service
 │   • 5433  → PostgreSQL (Social Log)    │
 └─────────────────────────────────────────┘
 
-🏗️ Stack Tecnologico:
+🏗️ Technology Stack:
 ┌─────────────────────────────────────────┐
 │              TECH STACK                 │
 ├─────────────────────────────────────────┤
@@ -249,14 +265,15 @@ Service      Service      Service
 │ 🗄️ Database: PostgreSQL 15             │
 │ 🐳 Container: Docker + Docker Compose  │
 │ 🔒 Proxy: Nginx                        │
-│ 📊 Monitoring: Prometheus              │
+│ 📊 Monitoring: Prometheus, Grafana      │
 │ 🎛️ Management: Portainer               │
 │ ☁️ Cloud: Google Cloud Platform        │
 │ 🔐 Auth: JWT Tokens                    │
 │ 🌐 API: RESTful + JSON                 │
 └─────────────────────────────────────────┘
 
-Sistema completamente containerizzato, scalabile e monitorato! 🚀
+Fully containerized, scalable, and monitored system! 🚀
+
 go-cloud-backend/
 ├── .dockerignore
 ├── .env
@@ -283,8 +300,6 @@ go-cloud-backend/
 │   │   0005_create_auth_log.sql
 │   └── models/
 │       auth_log.go
-├── documentation/
-│   ...
 ├── frontend/
 │   └── index.html
 ├── gateway/
@@ -302,6 +317,12 @@ go-cloud-backend/
 │   │       docs.go
 │   │       swagger.json
 │   │       swagger.yaml
+│   ├── grafana/
+│   │   └── provisioning/
+│   │       ├── dashboards/
+│   │       │   default.json
+│   │       └── datasources/
+│   │           prometheus.yml
 │   └── prometheus-service/
 │       ├── Dockerfile
 │       ├── go.mod
@@ -317,6 +338,11 @@ go-cloud-backend/
 │           metrics.go
 ├── nginx/
 │   nginx.conf
+├── pg-backup/
+│   .pgpass
+│   backup.sh
+│   crontab.txt
+│   Dockerfile
 ├── shared/
 │   go.mod
 │   go.sum
@@ -369,3 +395,20 @@ go-cloud-backend/
     │   qr_service.go
     └── utils/
         jwt_utils.go
+
+## Automatic Database Backup
+
+- There is a custom `pg-backup` container that performs a backup of all main databases (auth, user, social-log) every day (at 2:00 AM).
+- Backups are saved in the `./backups` folder.
+- For each database, **only the last 5 backups** are kept: every time a new backup is created, the oldest one is automatically deleted.
+- The backup and retention logic is managed by the script `pg-backup/backup.sh` and the container's crontab.
+- All credentials are securely managed via the `.pgpass` file.
+
+Example backup structure:
+```
+backups/
+  auth_logs_db_2025-06-23_02-00-00.sql.gz
+  users_db_2025-06-23_02-00-00.sql.gz
+  social_logs_db_2025-06-23_02-00-00.sql.gz
+  ... (max 5 per type)
+```
