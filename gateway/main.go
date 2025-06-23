@@ -328,7 +328,7 @@ func main() {
     }))    // Security middleware
     app.Use(helmet.New())
 
-    // Rate limiting
+    // Rate limiter globale (per tutte le route)
     app.Use(limiter.New(limiter.Config{
         Max:        100,
         Expiration: 1 * time.Minute,
@@ -341,6 +341,23 @@ func main() {
             })
         },
     }))
+
+    // Rate limiter più restrittivo solo per /login
+    app.Post("/login",
+    limiter.New(limiter.Config{
+        Max:        5, // Limite molto più basso per login
+        Expiration: 1 * time.Minute,
+        KeyGenerator: func(c *fiber.Ctx) string {
+            return c.IP()
+        },
+        LimitReached: func(c *fiber.Ctx) error {
+            return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+                "error": "Too many login attempts, try again later",
+            })
+        },
+    }),
+    loginHandler, // la tua funzione handler per il login
+)
 
     // Request/Response logging
     app.Use(RequestResponseLogger())
