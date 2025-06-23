@@ -242,6 +242,17 @@ services:
     networks:
       - microservices-net
 
+  pg-backup:
+    build: ./pg-backup
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      - auth-db
+      - user-db
+      - social-log-db
+    networks:
+      - microservices-net
+
 networks:
   microservices-net:
     driver: bridge
