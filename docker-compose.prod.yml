@@ -195,6 +195,32 @@ services:
     networks:
       - microservices-net
 
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki/chunks
+      - loki_index:/loki/index
+    networks:
+      - microservices-net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./monitoring/promtail/config.yml:/etc/promtail/config.yml:ro
+      - ./monitoring/promtail/positions:/positions
+      - /var/log:/var/log:ro
+    networks:
+      - microservices-net
+    restart: unless-stopped
+
 networks:
   microservices-net:
     driver: bridge
@@ -205,4 +231,8 @@ volumes:
   user_db_data:
     driver: local
   social_log_db_data:
+    driver: local
+  loki_data:
+    driver: local
+  loki_index:
     driver: local
