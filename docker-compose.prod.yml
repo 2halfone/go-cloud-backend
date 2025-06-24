@@ -106,7 +106,7 @@ services:
   prometheus-service:
     image: prom/prometheus:latest
     ports:
-      - "127.0.0.1:9090:9090"   # <--- AGGIUNGI QUESTA RIGA
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./monitoring/prometheus-service/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
